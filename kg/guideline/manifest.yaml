@@ -1,0 +1,206 @@
+version: 1
+snapshot_date: 2026-10-01
+scope: >-
+  Clinical guidance on loop diuretic use in the disease areas where it is dosed:
+  heart failure, acute kidney injury, chronic kidney disease, cirrhosis with ascites.
+  Per area, the latest guideline of a US society, a European society, KDIGO where it
+  covers the area, and Japan; plus the FDA labels of furosemide.
+raw_dir: kg/data/guideline_raw
+
+sources:
+  - id: acc_aha_hfsa_2022
+    title: 2022 AHA/ACC/HFSA Guideline for the Management of Heart Failure
+    organization: AHA/ACC/HFSA
+    year: 2022
+    doc_type: guideline
+    region: US
+    doi: 10.1161/CIR.0000000000001063
+    pmid: "35363499"
+    pmcid: null
+    url: https://doi.org/10.1161/CIR.0000000000001063
+    access: manual_pdf
+    download_url: https://www.ahajournals.org/doi/pdf/10.1161/CIR.0000000000001063
+    version: published
+    retrieved_on: 2026-10-01
+    sha256: 38458afdb404b9999bb37ddd10ff65a9943dfa588c90834eb6c44ec3825c6113
+
+  - id: esc_hf_2021
+    title: 2021 ESC Guidelines for the diagnosis and treatment of acute and chronic heart failure
+    organization: ESC
+    year: 2021
+    doc_type: guideline
+    region: EU
+    doi: 10.1093/eurheartj/ehab368
+    pmid: "34447992"
+    pmcid: null
+    url: https://doi.org/10.1093/eurheartj/ehab368
+    access: manual_pdf
+    download_url: https://orbi.uliege.be/bitstream/2268/290864/1/ehab368.pdf
+    version: published
+    retrieved_on: 2026-10-01
+    sha256: 322859344a36a677292f4c3eeeb82c6289c85e57f4ace002b4e84a56b4ae2f68
+
+  - id: esc_hf_2023_update
+    title: 2023 Focused Update of the 2021 ESC Guidelines for the diagnosis and treatment of acute and chronic heart failure
+    organization: ESC
+    year: 2023
+    doc_type: guideline
+    region: EU
+    doi: 10.1093/eurheartj/ehad195
+    pmid: "37622666"
+    pmcid: null
+    url: https://doi.org/10.1093/eurheartj/ehad195
+    access: manual_pdf
+    download_url: https://hal.science/hal-04462129/file/2023%20Mc%20Donagh%20et%20al.%20Focused%20Update.pdf
+    version: repository_deposit
+    retrieved_on: 2026-10-01
+    sha256: 708626fdad675c6e34b063feb248115bc19d03221f786d9e0cf43649e08c27e6
+
+  - id: hfa_diuretics_2019
+    title: The use of diuretics in heart failure with congestion - a position statement from the Heart Failure Association of the European Society of Cardiology
+    organization: HFA of the ESC
+    year: 2019
+    doc_type: position_statement
+    region: EU
+    doi: 10.1002/ejhf.1369
+    pmid: "30600580"
+    pmcid: null
+    url: https://doi.org/10.1002/ejhf.1369
+    access: manual_pdf
+    download_url: https://onlinelibrary.wiley.com/doi/pdfdirect/10.1002/ejhf.1369
+    version: published
+    retrieved_on: 2026-10-01
+    sha256: 3d6f6dc373934280e3b56cbc2179b25754212f06c62b0e431f71aee704d4b3be
+
+  - id: kdigo_aki_2012
+    title: KDIGO Clinical Practice Guideline for Acute Kidney Injury
+    organization: KDIGO
+    year: 2012
+    doc_type: guideline
+    region: International
+    doi: null
+    pmid: null
+    pmcid: null
+    url: https://kdigo.org/wp-content/uploads/2016/10/KDIGO-2012-AKI-Guideline-English.pdf
+    access: pmc_api
+    parts:
+      - {pmcid: PMC4089654, doi: 10.1038/kisup.2012.7, title: Summary of Recommendation Statements}
+      - {pmcid: PMC4089675, doi: 10.1038/kisup.2011.31, title: "Section 1: Introduction and Methodology"}
+      - {pmcid: PMC4089595, doi: 10.1038/kisup.2011.32, title: "Section 2: AKI Definition"}
+      - {pmcid: PMC4089747, doi: 10.1038/kisup.2011.33, title: "Section 3: Prevention and Treatment of AKI"}
+      - {pmcid: PMC4089629, doi: 10.1038/kisup.2011.34, title: "Section 4: Contrast-induced AKI"}
+      - {pmcid: PMC4089702, doi: 10.1038/kisup.2011.35, title: "Section 5: Dialysis Interventions for Treatment of AKI"}
+    retrieved_on: 2026-10-01
+    sha256: 41089dd6a71c0337704547c1a564f12e823f293fbcf91ee841b144d34665ac83
+
+  - id: erbp_kdigo_aki_2012
+    title: A European Renal Best Practice (ERBP) position statement on the Kidney Disease Improving Global Outcomes (KDIGO) clinical practice guidelines on acute kidney injury
+    organization: ERBP
+    year: 2012
+    doc_type: position_statement
+    region: EU
+    doi: 10.1093/ndt/gfs375
+    pmid: "23045432"
+    pmcid: PMC3520085
+    url: https://pmc.ncbi.nlm.nih.gov/articles/PMC3520085/
+    access: pmc_api
+    retrieved_on: 2026-10-01
+    sha256: 22ff401d8e0b01cd99dceb302545124f269d044d5b25ce464042bf1bc085970d
+
+  - id: jp_aki_2016
+    title: The Japanese Clinical Practice Guideline for acute kidney injury 2016
+    organization: Japanese AKI Clinical Practice Guideline 2016 Committee
+    year: 2018
+    doc_type: guideline
+    region: Asia
+    doi: 10.1186/s40560-018-0308-6
+    pmid: "30123509"
+    pmcid: PMC6088399
+    url: https://pmc.ncbi.nlm.nih.gov/articles/PMC6088399/
+    access: pmc_api
+    retrieved_on: 2026-10-01
+    sha256: 83e00d272fd3a7391b83fe7ca04d0917552b4b5514493897435e866d2c69d884
+
+  - id: kdigo_ckd_2024
+    title: KDIGO 2024 Clinical Practice Guideline for the Evaluation and Management of Chronic Kidney Disease
+    organization: KDIGO
+    year: 2024
+    doc_type: guideline
+    region: International
+    doi: 10.1016/j.kint.2023.10.018
+    pmid: "38490803"
+    pmcid: null
+    url: https://kdigo.org/wp-content/uploads/2024/03/KDIGO-2024-CKD-Guideline.pdf
+    access: manual_pdf
+    download_url: https://kdigo.org/wp-content/uploads/2024/03/KDIGO-2024-CKD-Guideline.pdf
+    version: published
+    retrieved_on: 2026-10-01
+    sha256: b18db280f7dc889a1a99447b779c0312cd536f939a5180b38894a5d68e4410c0
+
+  - id: jsn_ckd_2023
+    title: Essential points from evidence-based clinical practice guideline for chronic kidney disease 2023
+    organization: Japanese Society of Nephrology
+    year: 2024
+    doc_type: guideline_summary
+    region: Asia
+    doi: 10.1007/s10157-024-02497-4
+    pmid: "38713253"
+    pmcid: PMC11116248
+    url: https://pmc.ncbi.nlm.nih.gov/articles/PMC11116248/
+    access: pmc_api
+    retrieved_on: 2026-10-01
+    sha256: 0b57d203a2ff53312fce8e1ed74ab98364d0e29d6fafe9efcd2a72de37377701
+
+  - id: aasld_ascites_2021
+    title: Diagnosis, Evaluation, and Management of Ascites, Spontaneous Bacterial Peritonitis and Hepatorenal Syndrome - 2021 Practice Guidance by the AASLD
+    organization: AASLD
+    year: 2021
+    doc_type: guideline
+    region: US
+    doi: 10.1002/hep.31884
+    pmid: "33942342"
+    pmcid: null
+    url: https://doi.org/10.1002/hep.31884
+    access: manual_pdf
+    download_url: https://journals.lww.com/hep/pdf/10.1002/hep.31884
+    version: published
+    retrieved_on: 2026-10-01
+    sha256: e2a96d2bffa910da5d72dd4a39225d4f1dd070ad5496c61e1b13ab5eb8427aff
+
+  - id: easl_decompensated_cirrhosis_2018
+    title: EASL Clinical Practice Guidelines for the management of patients with decompensated cirrhosis
+    organization: EASL
+    year: 2018
+    doc_type: guideline
+    region: EU
+    doi: 10.1016/j.jhep.2018.03.024
+    pmid: "29653741"
+    pmcid: null
+    url: https://doi.org/10.1016/j.jhep.2018.03.024
+    access: manual_pdf
+    download_url: https://lirias.kuleuven.be/retrieve/75621310-ebac-4e06-aa6a-9010abdc51e4
+    version: published
+    retrieved_on: 2026-10-01
+    sha256: 0e196c89aca55590905928d2c95087a8ab62915159d1409637c48bee661a62fd
+
+  - id: dailymed_furosemide
+    title: FDA prescribing information for furosemide (injection and oral)
+    organization: US FDA via NLM DailyMed
+    year: null
+    doc_type: drug_label
+    region: US
+    doi: null
+    pmid: null
+    pmcid: null
+    url: https://dailymed.nlm.nih.gov/dailymed/services/v2/spls.json
+    access: dailymed_api
+    query:
+      doctype: 34391-3
+      rxcui:
+        injection: ["1719286", "1719290", "1719291", "204154", "2683305", "2683306", "727575"]
+        oral: ["104220", "197730", "197731", "197732", "199610", "248657", "251308", "310429", "313988", "630032"]
+      exclude_dosage_forms: [KIT]
+      sections: [DOSAGE AND ADMINISTRATION]
+      dedupe: identical_section_text
+    retrieved_on: 2026-10-02
+    sha256: aaf4bc6d7e850158f86a75c4dbeb2f0687091cbb79a07b8a82361f174a88ff2f

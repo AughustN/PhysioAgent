@@ -1,0 +1,103 @@
+llm:
+  mode: api
+  provider: gemini
+  providers:
+    groq:
+      base_url: https://api.groq.com/openai/v1
+      model_name: openai/gpt-oss-120b
+      api_key_env: GROQ_API_KEY
+    gemini:
+      base_url: https://generativelanguage.googleapis.com/v1beta/openai
+      model_name: gemini-2.5-flash-lite
+      api_key_env: GEMINI_API_KEY
+    # OpenAI-compatible gateway in front of several providers. Same wire format as the
+    # others, so llm/client.py needs no change. Two things differ in practice:
+    #   * model_name may need a "provider/model" prefix; unprefixed falls back to the
+    #     gateway's default provider, which is NOT stable across runs and would silently
+    #     change what an eval arm was scored on. Pin it explicitly.
+    #   * base_url must include /v1. For a self-hosted instance that is
+    #     http://127.0.0.1:7050/v1; override via OPENAI_BASE_URL in .env.
+    tokenrouter:
+      base_url: https://api.tokenrouter.com/v1
+      model_name: z-ai/glm-5.3-free
+      api_key_env: TOKENROUTER_API_KEY
+    # Replaced tokenrouter on 2026-09-19 after its gift balance ran out mid-run.
+    #
+    # READ BEFORE CHANGING model_name. The eval arms are only comparable to each other
+    # when every arm was scored by the SAME model: a paired plain-vs-kg3 delta measured
+    # across two models measures the models. Changing this invalidates every checkpoint
+    # in eval/results/, which has to be moved aside rather than appended to.
+    #
+    # Cost, measured on the run this replaced: output tokens were 93% of the bill because
+    # google/gemini-3.8-flash emitted 1,976 reasoning tokens per call against 65 tokens of
+    # answer, at 5x the input price. Whatever model sits here, check its reasoning
+    # behaviour before launching an 800-call arm -- the per-call token count, not the call
+    # count, is what empties a balance.
+    # Tried and abandoned on 2026-09-19; re-checked 2026-09-22 and the answer is the same,
+    # now with the reason from their own docs: AgentRouter is a free service for
+    # INTERACTIVE coding tools (it lists Claude Code, Codex, Gemini CLI) and documents no
+    # API-key or server-side endpoint at all. So the 401 below is the service working as
+    # intended, not a missing header on our side, and there is nothing here to fix by
+    # routing around it. Use a provider whose credential is issued for programmatic use:
+    # gemini, ollama_cloud, or a paid Anthropic API key.
+    # AgentRouter whitelists CLIENTS, not just keys.
+    # Every request is refused with `unauthorized_client_error` before the key is read --
+    # a valid key, an invented key and no Authorization header at all return the same 401
+    # -- because a batch script is not one of the interactive agent tools it supports.
+    # Kept here so nobody spends another evening rediscovering it.
+    agentrouter:
+      base_url: https://agentrouter.org/v1
+      model_name: deepseek-v4-flash
+      api_key_env: AGENTROUTER_API_KEY
+    openrouter:
+      base_url: https://openrouter.ai/api/v1
+      model_name: qwen/qwen3.8-27b:free
+      api_key_env: OPENROUTER_API_KEY
+    # Added 2026-09-22. Same model family as the groq provider above, which is the point:
+    # every measurement taken on groq (~1,900 tokens per schedule call, the dev floors the
+    # plain arm was compared against) stays usable, where a switch to gemini would have
+    # meant re-baselining the model's behaviour as well as its limits.
+    #
+    # Its free tier is metered in GPU TIME, not tokens or requests, with a session window
+    # that resets every 5 h and a weekly cap -- and none of those numbers are published.
+    # So the quota cannot be planned against the way groq's "TPD: Limit 200000" could:
+    # measure a 20-call smoke, read ollama.com/settings/usage, and extrapolate before
+    # committing an 888-call arm. An arm cut off mid-run resumes from its checkpoint, so
+    # the cost of guessing wrong is waiting for the next window, not lost rows.
+    ollama_cloud:
+      base_url: https://ollama.com/v1
+      model_name: gpt-oss:120b
+      api_key_env: OLLAMA_API_KEY
+    # Added 2026-09-22 with the data-use permission the user obtained. OpenAI-compatible,
+    # so no client change -- but read this before scoring an arm through it.
+    #
+    # `zdr: true` goes on every request (the account-level "Data Protection" setting does
+    # the same thing; the flag is here so the artifact records the intent).
+    #
+    # TWO THINGS THIS GATEWAY WILL NOT GIVE US, both checked in its docs 2026-09-22:
+    #   * no way to pin the upstream provider. Routing is by cheapest seller ask with
+    #     automatic failover, so one arm can be served by two different backends -- and a
+    #     plain-vs-kg delta measured across backends is measuring the backends.
+    #   * provider identity is stripped on purpose ("Provider cost and private routing
+    #     metadata are removed before the response is returned to you"), so the writeup
+    #     cannot state which model served which arm.
+    # It also sends `x-ci-techniques`, i.e. it transforms requests to cut cost. Compare
+    # `usage.prompt_tokens` against the ~1,150 this prompt measured elsewhere before
+    # trusting a result from here: if the gateway compresses the prompt, the arm did not
+    # measure the prompt we wrote. `client.last_headers` keeps the header for that check.
+    cheaperinference:
+      base_url: https://api.cheaperinference.com/v1
+      api_key_env: CHEAPERINFERENCE_API_KEY
+      # Pinned 2026-09-22 after listing /v1/models?zdr=true (66 models). This is the same
+      # model the groq provider served, so the measurements taken there -- ~1,150 prompt
+      # tokens per schedule call, the dev plain arm at AUPRC 0.416 / macro-F1 0.563 --
+      # remain a valid reference point rather than being thrown away with the provider.
+      # SWITCHED 2026-09-29 to deepseek-v4.1-flash at the user's request, for the
+      # index-dose benchmark (eval/run_eval_dose). It is on the /v1/models?zdr=true list
+      # (zero_data_retention: true, provider DeepSeek). Every run before this date --
+      # including the 2026-09-22 first results -- was gpt-oss-120b; numbers across the two
+      # models are NOT comparable, and every arm of one comparison must use one model.
+      model_name: deepseek-v4.1-flash
+      extra_body:
+        zdr: true
+

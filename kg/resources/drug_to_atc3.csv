@@ -1,0 +1,260 @@
+pattern,atc3,note
+# MIMIC-IV prescriptions.drug -> ATC level 3, without pyhealth.
+#
+# WHY A HAND TABLE. TRACER gets NDC->ATC from pyhealth's crosswalk, which is not in its
+# resources/ and which pyhealth downloads at import time. A compute node with no outbound
+# internet cannot do that, and prescriptions.ndc is null or a repackager code on a large
+# share of MIMIC rows anyway. The scope is only ~45 ATC3 classes, so naming the drugs
+# directly is both offline and more accurate than the code path we would be replacing.
+#
+# MATCHING. `pattern` is a lowercase regular expression searched (not fullmatch) against a
+# lowercased prescriptions.drug. FIRST MATCH WINS, so order is significant: put the
+# specific brand or salt above the generic stem it contains. Rows starting with # are
+# comments; blank patterns are ignored.
+#
+# COVERAGE IS NOT COMPLETE AND IS NOT MEANT TO BE. It covers the drugs that occur in this
+# scope; everything else falls through and is simply not a graph concept. Run
+# build_visits.py --report-unmapped to get the most frequent unmatched names on the real
+# data, then extend this file -- that report is the intended way to grow it, not guessing.
+
+# --- C03: diuretics. The class this repo predicts. -----------------------------------
+furosemide,C03C,also matches "furosemide (lasix)"
+\blasix\b,C03C,
+bumetanide,C03C,
+\bbumex\b,C03C,
+torsemide,C03C,
+torasemide,C03C,
+demadex,C03C,
+ethacrynic,C03C,ethacrynic acid - loop diuretic for sulfa allergy
+ethacrynate,C03C,the salt form MIMIC writes - 412 rows the stem above misses
+edecrin,C03C,
+metolazone,C03A,thiazide-like; the usual sequential-nephron-blockade add-on
+zaroxolyn,C03A,
+hydrochlorothiazide,C03A,
+\bhctz\b,C03A,
+chlorothiazide,C03A,
+diuril,C03A,
+chlorthalidone,C03A,
+indapamide,C03A,
+acetazolamide,C03B,carbonic anhydrase inhibitor
+diamox,C03B,
+spironolactone,C03D,
+aldactone,C03D,
+eplerenone,C03D,
+inspra,C03D,
+amiloride,C03D,
+triamterene,C03D,
+tolvaptan,C03X,vaptan - free-water diuresis, not natriuresis
+samsca,C03X,
+conivaptan,C03X,
+
+# --- B05: fluids, dialysis solutions, IV additives -----------------------------------
+# Ordered before the electrolyte supplements below because a premixed bag names both.
+sodium chloride 0.9%,B05B,
+0\.9% sodium chloride,B05B,
+normal saline,B05B,
+\bns\b,B05B,
+lactated ringer,B05B,
+\blr\b,B05B,
+ringer,B05B,
+dextrose,B05B,"matches ""5% dextrose"" ""dextrose 5%"" ""dextrose 50%"" ""iso-osmotic dextrose"" - MIMIC puts the strength on either side of the word, so the stem is what to match"
+\bd5w\b,B05B,
+d5 1/2ns,B05B,
+sodium chloride 0.45%,B05B,
+sodium chloride 3%,B05B,hypertonic saline
+mannitol,B05B,osmotic diuretic; ATC B05BC01
+parenteral nutrition,B05B,
+\btpn\b,B05B,
+albumin,B05A,volume expander; also the carrier furosemide binds to
+plasmalyte,B05B,
+plasma-lyte,B05B,
+hetastarch,B05A,hydroxyethyl starch is B05AA07 - was mapped to B05C which is no longer in scope
+hespan,B05A,the spelling MIMIC actually uses - 187 rows
+dianeal,B05D,peritoneal dialysis solution
+peritoneal dialysis solution,B05D,
+extraneal,B05D,
+prismasate,B05Z,CRRT replacement fluid
+prismasol,B05Z,
+citrate dialysate,B05Z,
+dialysate,B05Z,
+sodium bicarbonate,B05X,ATC B05XA02
+sodium bicarb,B05X,
+sterile water,B05X,
+^sw$,B05X,MIMIC abbreviates sterile water to SW on base-solution rows - 125k of them
+swfi,B05X,sterile water for injection
+
+# --- A12: mineral supplements. The correction side of a big diuretic dose. ------------
+potassium chloride,A12B,
+\bkcl\b,A12B,
+potassium phosphate,A12B,
+\bk phos\b,A12B,
+potassium citrate,A12B,
+potassium bicarbonate,A12B,
+calcium gluconate,A12A,
+calcium chloride,A12A,
+calcium carbonate,A12A,
+calcium acetate,V03A,phosphate binder - ATC V03AE07, not a supplement
+\bphoslo\b,V03A,brand of calcium acetate - 8 rows
+magnesium sulfate,A12C,
+magnesium oxide,A12C,
+magnesium chloride,A12C,
+sodium phosphate,A12C,
+neutra-phos,A12B,potassium/sodium phosphate supplement - 88k rows
+phospha 250,A12B,
+k-phos,A12B,
+
+# --- V03A: binders and antidotes that follow renal failure ---------------------------
+sevelamer,V03A,
+renagel,V03A,
+renvela,V03A,
+lanthanum,V03A,
+sodium polystyrene,V03A,
+kayexalate,V03A,
+patiromer,V03A,
+veltassa,V03A,
+sodium zirconium,V03A,
+lokelma,V03A,
+deferoxamine,V03A,
+sodium thiosulfate,V03A,
+
+# --- H05: parathyroid axis in CKD ----------------------------------------------------
+cinacalcet,H05B,
+sensipar,H05B,
+paricalcitol,H05B,
+zemplar,H05B,
+doxercalciferol,H05B,
+teriparatide,H05A,
+calcitonin,H05B,
+
+# --- B01/B02/B03/B06: blood ----------------------------------------------------------
+heparin,B01A,
+enoxaparin,B01A,
+lovenox,B01A,
+warfarin,B01A,
+coumadin,B01A,
+apixaban,B01A,
+eliquis,B01A,
+rivaroxaban,B01A,
+xarelto,B01A,
+dabigatran,B01A,
+argatroban,B01A,
+bivalirudin,B01A,
+fondaparinux,B01A,
+aspirin,B01A,ATC B01AC06 at the antithrombotic dose used here
+clopidogrel,B01A,
+plavix,B01A,
+ticagrelor,B01A,
+prasugrel,B01A,
+dipyridamole,B01A,
+alteplase,B01A,
+cilostazol,B01A,
+tranexamic,B02A,
+aminocaproic,B02A,
+amicar,B02A,
+phytonadione,B02B,vitamin K
+vitamin k,B02B,
+protamine,B02B,
+desmopressin,B02B,ATC B02BX06 in the haemostasis indication
+\bddavp\b,B02B,
+factor viia,B02B,
+prothrombin complex,B02B,
+\bkcentra\b,B02B,
+ferrous sulfate,B03A,
+ferrous gluconate,B03A,
+iron sucrose,B03A,
+venofer,B03A,
+ferric gluconate,B03A,
+ferumoxytol,B03A,
+iron dextran,B03A,
+folic acid,B03B,
+folate,B03B,
+cyanocobalamin,B03B,
+vitamin b12,B03B,
+epoetin,B03X,
+\bepogen\b,B03X,
+procrit,B03X,
+darbepoetin,B03X,
+aranesp,B03X,
+filgrastim,B06A,ATC L03 strictly; kept here as the haematologic growth factor in scope
+neupogen,B06A,
+
+# --- G04: urologicals ----------------------------------------------------------------
+tamsulosin,G04C,
+flomax,G04C,
+finasteride,G04C,
+dutasteride,G04C,
+alfuzosin,G04C,
+oxybutynin,G04B,
+tolterodine,G04B,
+phenazopyridine,G04B,
+bethanechol,G04B,
+
+# --- C01: cardiac. Inotropes and vasopressors change renal perfusion directly. --------
+digoxin,C01A,
+lanoxin,C01A,
+dobutamine,C01C,
+dopamine,C01C,
+milrinone,C01C,
+norepinephrine,C01C,
+levophed,C01C,
+epinephrine,C01C,
+phenylephrine,C01C,
+neo-synephrine,C01C,
+midodrine,C01C,
+nitroglycerin,C01D,
+isosorbide,C01D,
+amiodarone,C01B,
+lidocaine,C01B,
+sotalol,C01B,
+adenosine,C01E,
+ranolazine,C01E,
+
+# --- C02/C07/C08/C09: blood pressure and the RAAS ------------------------------------
+# C09 is the group that moves eGFR and diuretic response together. Its absence would make
+# the graph confound the two.
+lisinopril,C09A,
+enalapril,C09A,
+enalaprilat,C09A,
+captopril,C09A,
+ramipril,C09A,
+benazepril,C09A,
+quinapril,C09A,
+fosinopril,C09A,
+losartan,C09C,
+valsartan,C09C,
+irbesartan,C09C,
+olmesartan,C09C,
+candesartan,C09C,
+telmisartan,C09C,
+sacubitril,C09D,ARNI - entresto
+entresto,C09D,
+aliskiren,C09X,
+metoprolol,C07A,
+carvedilol,C07A,
+labetalol,C07A,
+atenolol,C07A,
+bisoprolol,C07A,
+propranolol,C07A,
+esmolol,C07A,
+nadolol,C07A,
+amlodipine,C08C,
+nifedipine,C08C,
+nicardipine,C08C,
+felodipine,C08C,
+clevidipine,C08C,
+diltiazem,C08D,
+verapamil,C08D,
+clonidine,C02A,
+methyldopa,C02A,
+guanfacine,C02A,
+doxazosin,C02C,
+terazosin,C02C,
+prazosin,C02C,
+hydralazine,C02D,
+minoxidil,C02D,
+nitroprusside,C02K,
+nipride,C02K,
+bosentan,C02K,
+sildenafil,C02K,pulmonary vasodilator indication
+epoprostenol,C02K,
+treprostinil,C02K,

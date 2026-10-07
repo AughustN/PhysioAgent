@@ -1,0 +1,404 @@
+# Which medical concepts are allowed into the knowledge graph.
+#
+#
+# The vocabulary is whitelisted. Every code below is written out with the name it has in
+# resources/CCSCM.csv, CCSPROC.csv and ATC.csv, and scope/filter.py CHECKS those names on
+# load: a typo'd code is a hard error rather than a silently missing concept. Do not edit a
+# name to something more readable -- it is a checksum, not a label.
+#
+# THREE TIERS, and the third is the one that carries the mechanism.
+#   core     kidney / blood / excretion. Answers "whose kidney is this".
+#   tier_a   cardio, hepatic, respiratory, infection. These decide the dose in practice:
+#            heart failure is the leading indication, cirrhotic ascites the second, and
+#            sepsis inverts the decision entirely.
+#   tier_c   seed_terms below. Nephron physiology and furosemide pharmacology, which have
+#            NO CCS or ATC code at all and therefore cannot arrive through EHR
+#            co-occurrence. Without them the graph is a comorbidity map: it explains who
+#            gets a big dose, never why a given dose produces a given urine output.
+#
+# tier_b (nephrotoxins, tubular-secretion competitors, metabolic) is defined but OFF by
+# default -- see profiles. Turn it on only if an ablation shows the extra nodes earn their
+# cost.
+#
+# WHERE THIS WHITELIST APPLIES, AND WHERE IT MUST NOT
+# It gates SEEDS, not the graph. A source is asked about these concepts; what it answers
+# with is allowed to name anything.
+#
+#   S0/S1  EHR concepts       gated hard. A code outside the list never becomes a node.
+#   S2     UMLS path interior gated by the semantic-type / MeSH block at the bottom of
+#                             this file, so a two-hop walk cannot wander out of the renal
+#                             domain and back.
+#   S3/S4  entities a source  NOT gated against CCS/ATC. The requirement is that a triple
+#          produces           touch at least one seed concept (a 1-hop anchor); the rest
+#                             is left to the clustering in refine_kg.
+#
+# The last row is the one that is easy to get wrong. Filtering generated entities back
+# down to this list would turn the graph into a 103-node co-occurrence matrix and delete
+# exactly what makes it a knowledge graph: "hypoalbuminemia", "loop of Henle" and
+# "NKCC2 cotransporter" have no CCS or ATC code, which is why tier_c below had to be
+# written by hand in the first place.
+version: 1
+
+profiles:
+  # The default is core + tier_a + tier_c, as decided 2026-09-09.
+  default:
+    groups: [renal, excretion, blood, fluid_electrolyte, diuretics,
+             cardio, hepatic, respiratory, infection]
+    seed_terms: true
+  extended:
+    groups: [renal, excretion, blood, fluid_electrolyte, diuretics,
+             cardio, hepatic, respiratory, infection,
+             nephrotoxins, metabolic]
+    seed_terms: true
+  # core only, for the ablation that asks what tier_a and tier_c were worth.
+  core:
+    groups: [renal, excretion, blood, fluid_electrolyte, diuretics]
+    seed_terms: false
+
+groups:
+
+  # ---------------------------------------------------------------- core: kidney
+  renal:
+    tier: core
+    conditions:                     # CCSCM
+      156: "Nephritis; nephrosis; renal sclerosis"
+      157: "Acute and unspecified renal failure"
+      158: "Chronic kidney disease"
+      161: "Other diseases of kidney and ureters"
+      33:  "Cancer of kidney and renal pelvis"
+    procedures:                     # CCSPROC
+      103: "Nephrotomy and nephrostomy"
+      104: "Nephrectomy; partial or complete"
+      105: "Kidney transplant"
+      110: "Other diagnostic procedures of urinary tract"
+      112: "Other OR therapeutic procedures of urinary tract"
+    drugs: {}                       # ATC level 3
+
+  # ------------------------------------------------------- core: excretion / dialysis
+  # The outflow tract and the machines that replace it. Dialysis belongs here rather than
+  # under renal because its presence changes what a diuretic dose MEANS -- an anuric
+  # dialysis patient has no urine to produce, so a dose-response label from that row is
+  # not the same quantity as one from a patient still making urine.
+  excretion:
+    tier: core
+    conditions:
+      159: "Urinary tract infections"
+      160: "Calculus of urinary tract"
+      162: "Other diseases of bladder and urethra"
+      163: "Genitourinary symptoms and ill-defined conditions"
+      32:  "Cancer of bladder"
+      34:  "Cancer of other urinary organs"
+    procedures:
+      57:  "Creation; revision and removal of arteriovenous fistula or vessel-to-vessel cannula for dialysis"
+      58:  "Hemodialysis"
+      91:  "Peritoneal dialysis"
+      100: "Endoscopy and endoscopic biopsy of the urinary tract"
+      101: "Transurethral excision; drainage; or removal urinary obstruction"
+      102: "Ureteral catheterization"
+      106: "Genitourinary incontinence procedures"
+      107: "Extracorporeal lithotripsy; urinary"
+      108: "Indwelling catheter"
+      111: "Other non-OR therapeutic procedures of urinary tract"
+      195: "Diagnostic ultrasound of urinary tract"
+      200: "Nonoperative urinary system measurements"
+    drugs:
+      G04B: "UROLOGICALS"
+      G04C: "DRUGS USED IN BENIGN PROSTATIC HYPERTROPHY"
+
+  # ---------------------------------------------------------------- core: blood
+  blood:
+    tier: core
+    conditions:
+      59: "Deficiency and other anemia"
+      60: "Acute posthemorrhagic anemia"
+      61: "Sickle cell anemia"
+      62: "Coagulation and hemorrhagic disorders"
+      63: "Diseases of white blood cells"
+      64: "Other hematologic conditions"
+    procedures:
+      222: "Blood transfusion"
+    drugs:
+      B01A: "ANTITHROMBOTIC AGENTS"
+      B02A: "ANTIFIBRINOLYTICS"
+      B02B: "VITAMIN K AND OTHER HEMOSTATICS"
+      B03A: "IRON ANTIANEMIC PREPARATIONS"
+      # The ATC release ships this name with HTML entities in it. Left alone it
+      # becomes a graph node literally called "vitamin b<n>12</n> and folic acid";
+      # resources/ATC.csv is corrected to match.
+      B03B: "VITAMIN B12 AND FOLIC ACID"
+      B03X: "OTHER ANTIANEMIC PREPARATIONS in ATC"
+      B06A: "OTHER HEMATOLOGICAL AGENTS in ATC"
+
+  # ------------------------------------------------- core: fluid, electrolyte, volume
+  # The axis the answer is measured on. B05B (IV fluids) is in scope precisely because it
+  # works against the diuretic: a patient being resuscitated and diuresed in the same
+  # 12 hours is a different decision from one being diuresed alone.
+  fluid_electrolyte:
+    tier: core
+    conditions:
+      55: "Fluid and electrolyte disorders"
+    procedures: {}
+    drugs:
+      B05A: "BLOOD AND RELATED PRODUCTS"
+      B05B: "IV solutions used in parenteral administration of fluids, electrolytes and nutrients"
+      # B05C (irrigating solutions) was here and is deliberately gone. Measured on
+      # MIMIC-IV 3.1: all 810,860 rows that would reach it are line flushes, which
+      # build_visits excludes as non-therapeutic BEFORE either mapping route runs.
+      # Keeping the code in scope only guaranteed a concept that can never be
+      # observed, i.e. a permanent entry in concepts_never_seen that reads like a
+      # mapping gap. Hespan, the one real B05-class volume expander in the data, is
+      # hydroxyethyl starch (B05AA07) and belongs under B05A above.
+      B05D: "PERITONEAL DIALYTICS"
+      B05X: "I.V. SOLUTION ADDITIVES"
+      B05Z: "HEMODIALYTICS AND HEMOFILTRATES"
+      A12A: "CALCIUM SUPPLEMENTS"
+      A12B: "POTASSIUM SUPPLEMENTS"
+      A12C: "OTHER MINERAL SUPPLEMENTS in ATC"
+      # Broad and noisy -- V03A is ATC's junk drawer -- but it is the only home for the
+      # potassium and phosphate binders that follow a big diuretic dose. Kept knowingly.
+      V03A: "ALL OTHER THERAPEUTIC PRODUCTS"
+
+  # ---------------------------------------------------------------- core: the drug class
+  diuretics:
+    tier: core
+    conditions: {}
+    procedures: {}
+    drugs:
+      C03A: "LOW-CEILING DIURETICS, THIAZIDES"
+      C03B: "LOW-CEILING DIURETICS, EXCL. THIAZIDES"
+      C03C: "HIGH-CEILING DIURETICS"          # furosemide: the drug this repo predicts
+      C03D: "POTASSIUM-SPARING DIURETICS"
+      C03E: "DIURETICS AND POTASSIUM-SPARING AGENTS IN COMBINATION"
+      C03X: "OTHER DIURETICS in ATC"
+      H05A: "PARATHYROID HORMONES AND ANALOGUES"
+      H05B: "ANTI-PARATHYROID AGENTS"
+
+  # ------------------------------------------------- tier_a: cardiac / haemodynamic
+  # Heart failure is the leading indication; renal perfusion decides how much drug reaches
+  # the loop of Henle; systolic pressure decides whether the dose can be raised at all.
+  # C09 (ACEi/ARB) matters most of any drug group here -- it moves eGFR and diuretic
+  # response together, so a graph without it confounds the two.
+  cardio:
+    tier: a
+    conditions:
+      96:  "Heart valve disorders"
+      97:  "Peri-; endo-; and myocarditis; cardiomyopathy"
+      98:  "Essential hypertension"
+      99:  "Hypertension with complications and secondary hypertension"
+      100: "Acute myocardial infarction"
+      101: "Coronary atherosclerosis and other heart disease"
+      103: "Pulmonary heart disease"
+      106: "Cardiac dysrhythmias"
+      107: "Cardiac arrest and ventricular fibrillation"
+      108: "Congestive heart failure; nonhypertensive"
+      249: "Shock"
+    procedures:
+      203: "Electrographic cardiac monitoring"
+      204: "Swan-Ganz catheterization for monitoring"
+    drugs:
+      C01A: "CARDIAC GLYCOSIDES"
+      C01C: "CARDIAC STIMULANTS EXCL. CARDIAC GLYCOSIDES"
+      C01D: "VASODILATORS USED IN CARDIAC DISEASES"
+      C01E: "OTHER CARDIAC PREPARATIONS in ATC"
+      C02A: "ANTIADRENERGIC AGENTS, CENTRALLY ACTING"
+      C02C: "ANTIADRENERGIC AGENTS, PERIPHERALLY ACTING"
+      C02D: "ARTERIOLAR SMOOTH MUSCLE, AGENTS ACTING ON"
+      C02K: "OTHER ANTIHYPERTENSIVES in ATC"
+      C02L: "ANTIHYPERTENSIVES AND DIURETICS IN COMBINATION"
+      C07A: "BETA BLOCKING AGENTS"
+      C08C: "SELECTIVE CALCIUM CHANNEL BLOCKERS WITH MAINLY VASCULAR EFFECTS"
+      C08D: "SELECTIVE CALCIUM CHANNEL BLOCKERS WITH DIRECT CARDIAC EFFECTS"
+      C08E: "NON-SELECTIVE CALCIUM CHANNEL BLOCKERS"
+      C09A: "ACE INHIBITORS, PLAIN"
+      C09B: "ACE INHIBITORS, COMBINATIONS"
+      C09C: "ANGIOTENSIN II RECEPTOR BLOCKERS (ARBs), PLAIN"
+      C09D: "ANGIOTENSIN II RECEPTOR BLOCKERS (ARBs), COMBINATIONS"
+      C09X: "OTHER AGENTS ACTING ON THE RENIN-ANGIOTENSIN SYSTEM in ATC"
+
+  # ------------------------------------------------------------- tier_a: hepatic
+  # Cirrhotic ascites is the second indication, and hypoalbuminaemia is a mechanism of
+  # diuretic resistance in its own right: less drug bound in plasma reaches the tubule.
+  hepatic:
+    tier: a
+    conditions:
+      6:   "Hepatitis"
+      # CCS 150 ("Liver disease; alcohol-related") is deliberately ABSENT although it is
+      # the obvious code: it has zero rows in both shipped crosswalks, so it can never
+      # fire, and the first full run confirmed it -- 0 admissions out of 459,588. The
+      # ICD-10 map sends alcoholic cirrhosis (K70.30/31) to 660 instead, which is a
+      # substance-use category rather than a liver one. 660 is kept anyway: alcoholic
+      # cirrhosis with ascites is a leading indication for this drug, and losing it costs
+      # more than the alcohol-withdrawal rows it drags in. Non-alcoholic cirrhosis
+      # (K74.x) maps to 151 and needs no proxy.
+      151: "Other liver diseases"
+      152: "Pancreatic disorders (not diabetes)"
+      660: "Alcohol-related disorders"
+    procedures: {}
+    drugs: {}
+
+  # ------------------------------------------------------------ tier_a: respiratory
+  # Where volume overload becomes visible and urgent. Ventilation is also a reason a dose
+  # is given without waiting to see the urine.
+  respiratory:
+    tier: a
+    conditions:
+      131: "Respiratory failure; insufficiency; arrest (adult)"
+    procedures:
+      34:  "Tracheostomy; temporary and permanent"
+      216: "Respiratory intubation and mechanical ventilation"
+      217: "Other respiratory therapy"
+    drugs: {}
+
+  # ------------------------------------------------------------- tier_a: infection
+  # Sepsis inverts the decision: acute kidney injury plus hypotension turns an upward
+  # argument into a downward one.
+  infection:
+    tier: a
+    conditions:
+      2: "Septicemia (except in labor)"
+    procedures: {}
+    drugs: {}
+
+  # ------------------------------------- tier_b (OFF by default): competitors and toxins
+  # Furosemide reaches its site of action by tubular secretion through the organic anion
+  # transporter. NSAIDs compete for that transporter AND blunt renal prostaglandins, so
+  # they act directly on urine output rather than merely on who gets dosed.
+  nephrotoxins:
+    tier: b
+    conditions: {}
+    procedures: {}
+    drugs:
+      M01A: "ANTIINFLAMMATORY AND ANTIRHEUMATIC PRODUCTS, NON-STEROIDS"
+      J01G: "AMINOGLYCOSIDE ANTIBACTERIALS"
+      J01X: "OTHER ANTIBACTERIALS in ATC"
+      V08A: "X-RAY CONTRAST MEDIA, IODINATED"
+      V08B: "X-RAY CONTRAST MEDIA, NON-IODINATED"
+      H02A: "CORTICOSTEROIDS FOR SYSTEMIC USE, PLAIN"
+      L04A: "IMMUNOSUPPRESSANTS"
+
+  metabolic:
+    tier: b
+    conditions:
+      49: "Diabetes mellitus without complication"
+      50: "Diabetes mellitus with complications"
+      52: "Nutritional deficiencies"
+      58: "Other nutritional; endocrine; and metabolic disorders"
+    procedures:
+      223: "Enteral and parenteral nutrition"
+    drugs:
+      A10A: "INSULINS AND ANALOGUES"
+      A10B: "BLOOD GLUCOSE LOWERING DRUGS, EXCL. INSULINS"
+
+# --------------------------------------------------------------------------- tier_c
+# Concepts with no CCS or ATC code. They cannot arrive through EHR co-occurrence, so they
+# are injected as a synthetic concept-set: handed to the LLM source (S3) and used as
+# PubMed queries (S4) exactly as if they were a visit.
+#
+# This is the only part of the vocabulary that describes MECHANISM rather than
+# CO-OCCURRENCE, and it is what a urine-output prediction needs. Grouped so a set handed to
+# the LLM is coherent -- one prompt about transport, one about pharmacokinetics -- rather
+# than 30 unrelated terms in one call.
+# NAMES HERE ARE WHAT A PAPER WRITES, NOT WHAT A TOPIC IS CALLED. Measured 2026-09-17:
+# the pharmacokinetics theme returned 0 triples from 9 abstracts, because every one of its
+# terms was a phrase -- "oral bioavailability of furosemide" -- and the anchor rule in
+# ground_triple requires an endpoint to EQUAL a term after normalisation. Papers write
+# "bioavailability". Nothing anchored, so everything was dropped, and the same shape
+# explains 20 of the 25 seeds UMLS could not resolve: a topic label has no CUI either.
+#
+# So each entry is now the atomic term the literature uses. The topic it stands for is
+# written beside it where the two differ.
+#
+# ORDER IS LOAD-BEARING: pubmed_source queries with the FIRST SIX terms of a theme. The
+# volume theme used to carry "cardiorenal syndrome" in that window and the whole theme
+# drifted into cardiorenal reviews -- it is the most-published term in the group, so it
+# won every query. Specific terms first, well-published general ones last.
+seed_terms:
+  transport:
+    - "loop of Henle"
+    - "thick ascending limb"
+    - "NKCC2 cotransporter"
+    - "sodium reabsorption"
+    - "natriuresis"
+    - "fractional excretion of sodium"
+    - "sodium avidity"                 # was: distal nephron sodium avidity
+    - "urinary sodium"                 # was: urinary sodium concentration
+    - "tubuloglomerular feedback"
+    - "macula densa"
+  pharmacokinetics:
+    - "tubular secretion"              # was: tubular secretion of furosemide
+    - "protein binding"                # was: protein binding of furosemide
+    - "bioavailability"                # was: oral bioavailability of furosemide
+    - "ceiling dose"                   # was: dose-response ceiling
+    - "threshold dose"
+    - "organic anion transporter"
+    - "hypoalbuminemia"                # was: hypoalbuminemia and diuretic delivery
+    - "oral loop diuretic"             # was: intravenous versus oral loop diuretic
+  response:
+    - "diuretic resistance"
+    - "diuretic response"
+    - "braking phenomenon"
+    - "post-diuretic sodium retention"
+    - "diuretic efficiency"            # was: urine output per dose
+    - "natriuretic response"           # was: natriuretic response to loop diuretic
+    - "sodium retention"
+    - "decongestion"
+    - "residual congestion"
+  volume:
+    - "aldosterone escape"
+    - "negative fluid balance"         # was: net negative fluid balance
+    - "intravascular volume depletion"
+    - "worsening renal function"       # was: worsening renal function during decongestion
+    - "renin-angiotensin-aldosterone system"
+    - "fluid balance"
+    - "cardiorenal syndrome"           # most-published of this group: keep it out of the
+    - "body weight change"             # first six so it cannot swallow the theme's query
+
+# ------------------------------------------------------------------ UMLS gate (S2)
+# Not used by S0/S1. Recorded here so the whitelist lives in one file: when the UMLS
+# source runs, a path is kept only if every intermediate CUI clears this gate, which is
+# what stops a two-hop walk from wandering out of the renal domain and back.
+#
+# MEASURED 2026-09-11 ON UMLS 2026AA -- read this before editing mesh_prefixes.
+# The semantic_types list below is live in every gate mode. The mesh_prefixes list is
+# used ONLY by --gate-mode strict, which is no longer the default, because the prefixes
+# turned out to cost far more than they buy:
+#
+#   gate                            CUIs      edges   pairs connected   triples
+#   strict (these prefixes)          727      5,300      155 / 5,169       239
+#   strict + C01/C14/C06/C08       1,968     15,600            --           --
+#   mesh-any (DEFAULT)             9,681     65,450      781 / 5,169     1,338
+#   sty-mesh-optional          1,223,568  2,838,400    1,254 / 5,169     5,443
+#
+# Two things that list cannot fix. First, only 31,184 CUIs in all of 2026AA carry a MeSH
+# tree number at all, and 9,681 of those clear the semantic-type list -- so 9,681 is the
+# ceiling of EVERY prefix-based gate, and adding subtrees can only walk towards it.
+# Second, these prefixes cover urogenital and hemic only, while profile "default" turns
+# on cardio / hepatic / respiratory / infection; a path from a heart-failure concept to a
+# renal one therefore died at its own interior. That mismatch, not the code, is what made
+# 97% of pairs unreachable.
+#
+# sty-mesh-optional was measured too, and rejected on what it adds rather than on size:
+# the extra triples are SNOMED post-coordination ("o/e: renal calculus has finding
+# context known present", "paquin operation") -- exactly the out-of-domain wandering the
+# gate exists to stop. Kept as an ablation, not a build.
+umls:
+  semantic_types:
+    - "Disease or Syndrome"
+    - "Pathologic Function"
+    - "Finding"
+    - "Laboratory or Test Result"
+    - "Organ or Tissue Function"
+    - "Cell Function"
+    - "Body Substance"
+    - "Body Part, Organ, or Organ Component"
+    - "Pharmacologic Substance"
+    - "Therapeutic or Preventive Procedure"
+    - "Diagnostic Procedure"
+  mesh_prefixes:
+    - "C12"              # urogenital diseases
+    - "C15"              # hemic and lymphatic diseases
+    - "A05"              # urogenital anatomy
+    - "A15"              # hemic and immune anatomy
+    - "G09"              # urinary tract and circulatory physiology
+    - "D12.776.157"      # carrier proteins / transporters (NKCC2, OAT)
+    - "D27.505.954.411"  # natriuretic agents

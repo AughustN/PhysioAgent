@@ -1,0 +1,11 @@
+# Default: let git detect text files and store them with LF.
+* text=auto
+
+# Shell and Slurm scripts run on Linux; a CRLF here makes sbatch refuse the file
+# outright ("Batch script contains DOS line breaks"), and the CSVs are read by both
+# platforms. Normalise on checkout so a Windows clone still ships LF.
+*.sh   text eol=lf
+*.slurm text eol=lf
+*.csv  text eol=lf
+*.py   text eol=lf
+*.yaml text eol=lf

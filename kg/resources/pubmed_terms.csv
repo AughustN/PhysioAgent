@@ -1,0 +1,135 @@
+concept,query_terms,note
+# Scope concept -> the phrase a paper would actually use.
+#
+# WHY THIS FILE EXISTS. CCS and ATC labels are administrative, not clinical. The first
+# dry run searched them verbatim and got zero abstracts for "ace inhibitors, combinations"
+# and five for "acute and unspecified renal failure" -- not because the literature is
+# silent, but because nobody writes those strings. A concept with no abstracts contributes
+# no edges, and the failure is invisible: the run finishes, the graph is just thinner.
+#
+# `query_terms` is pipe-separated and becomes ("t1"[tiab] OR "t2"[tiab] ...). A concept
+# absent from this file falls back to its own name, which is right for the ones that
+# already read like clinical English ("chronic kidney disease", "hemodialysis").
+#
+# Grow it from measurement, not guesswork: `--dry-run` prints the abstract count per
+# concept and flags the zeroes.
+
+# --- kidney ---------------------------------------------------------------------------
+acute and unspecified renal failure,acute kidney injury|acute renal failure,
+nephritis; nephrosis; renal sclerosis,glomerulonephritis|nephrotic syndrome|nephrosclerosis,
+other diseases of kidney and ureters,kidney disease|ureteral obstruction,
+cancer of kidney and renal pelvis,renal cell carcinoma|kidney cancer,
+kidney transplant,kidney transplantation|renal transplantation,
+nephrectomy; partial or complete,nephrectomy,
+nephrotomy and nephrostomy,nephrostomy,
+other diagnostic procedures of urinary tract,renal biopsy|urodynamic study,
+other or therapeutic procedures of urinary tract,urologic surgery,
+
+# --- excretion / dialysis ---------------------------------------------------------------
+urinary tract infections,urinary tract infection|pyelonephritis,
+calculus of urinary tract,nephrolithiasis|urolithiasis|kidney stone,
+other diseases of bladder and urethra,bladder outlet obstruction|urethral stricture,
+genitourinary symptoms and ill-defined conditions,oliguria|anuria|urinary retention,
+cancer of bladder,bladder cancer|urothelial carcinoma,
+cancer of other urinary organs,ureteral cancer|urethral cancer,
+creation; revision and removal of arteriovenous fistula or vessel-to-vessel cannula for dialysis,arteriovenous fistula|dialysis access,
+hemodialysis,hemodialysis|renal replacement therapy,
+peritoneal dialysis,peritoneal dialysis,
+endoscopy and endoscopic biopsy of the urinary tract,cystoscopy|ureteroscopy,
+transurethral excision; drainage; or removal urinary obstruction,transurethral resection|relief of urinary obstruction,
+ureteral catheterization,ureteral stent|ureteral catheterization,
+genitourinary incontinence procedures,urinary incontinence surgery,
+extracorporeal lithotripsy; urinary,extracorporeal shock wave lithotripsy,
+indwelling catheter,indwelling urinary catheter|Foley catheter,
+other non-or therapeutic procedures of urinary tract,bladder irrigation|urinary catheterization,
+diagnostic ultrasound of urinary tract,renal ultrasonography,
+nonoperative urinary system measurements,urine output monitoring|urodynamics,
+urologicals,overactive bladder treatment|urological agent,
+drugs used in benign prostatic hypertrophy,tamsulosin|benign prostatic hyperplasia treatment,
+
+# --- blood ------------------------------------------------------------------------------
+deficiency and other anemia,anemia|iron deficiency anemia,
+acute posthemorrhagic anemia,acute blood loss anemia|posthemorrhagic anemia,
+sickle cell anemia,sickle cell disease,
+coagulation and hemorrhagic disorders,coagulopathy|bleeding disorder,
+diseases of white blood cells,leukopenia|neutropenia,
+other hematologic conditions,thrombocytopenia|hematologic disorder,
+blood transfusion,red blood cell transfusion|blood transfusion,
+antithrombotic agents,anticoagulation|heparin|warfarin,
+antifibrinolytics,tranexamic acid|antifibrinolytic,
+vitamin k and other hemostatics,vitamin K|prothrombin complex concentrate,
+iron antianemic preparations,intravenous iron|iron supplementation,
+vitamin b12 and folic acid,vitamin B12|folic acid,
+other antianemic preparations in atc,erythropoiesis-stimulating agent|epoetin alfa,
+other hematological agents in atc,granulocyte colony-stimulating factor,
+
+# --- fluid, electrolyte, volume ----------------------------------------------------------
+fluid and electrolyte disorders,hyponatremia|hypokalemia|electrolyte disorder,
+blood and related products,albumin infusion|human albumin,
+"iv solutions used in parenteral administration of fluids, electrolytes and nutrients",intravenous fluid therapy|crystalloid|normal saline,
+"irrigating solutions, blood substitutes and perfusion",hydroxyethyl starch|colloid solution,
+peritoneal dialytics,peritoneal dialysis solution|icodextrin,
+i.v. solution additives,sodium bicarbonate|intravenous potassium,
+hemodialytics and hemofiltrates,dialysate|hemofiltration replacement fluid,
+calcium supplements,calcium gluconate|calcium supplementation,
+potassium supplements,potassium chloride|potassium supplementation,
+other mineral supplements in atc,magnesium sulfate|phosphate supplementation,
+all other therapeutic products,sevelamer|patiromer|sodium polystyrene sulfonate|phosphate binder,V03A is ATC's junk drawer; query the binders that put it in scope
+
+# --- the drug class ----------------------------------------------------------------------
+high-ceiling diuretics,furosemide|loop diuretic|bumetanide|torsemide,
+"low-ceiling diuretics, thiazides",hydrochlorothiazide|thiazide diuretic,
+"low-ceiling diuretics, excl. thiazides",metolazone|acetazolamide,
+potassium-sparing diuretics,spironolactone|mineralocorticoid receptor antagonist|amiloride,
+diuretics and potassium-sparing agents in combination,combination diuretic therapy|sequential nephron blockade,
+other diuretics in atc,tolvaptan|vaptan,
+parathyroid hormones and analogues,teriparatide|parathyroid hormone,
+anti-parathyroid agents,cinacalcet|secondary hyperparathyroidism treatment,
+
+# --- cardiac / haemodynamic ---------------------------------------------------------------
+congestive heart failure; nonhypertensive,heart failure|acute decompensated heart failure,
+peri-; endo-; and myocarditis; cardiomyopathy,cardiomyopathy|myocarditis|infective endocarditis,
+heart valve disorders,valvular heart disease|aortic stenosis|mitral regurgitation,
+essential hypertension,hypertension,
+hypertension with complications and secondary hypertension,resistant hypertension|secondary hypertension,
+acute myocardial infarction,myocardial infarction,
+coronary atherosclerosis and other heart disease,coronary artery disease,
+pulmonary heart disease,pulmonary hypertension|cor pulmonale,
+cardiac dysrhythmias,atrial fibrillation|cardiac arrhythmia,
+cardiac arrest and ventricular fibrillation,cardiac arrest|ventricular fibrillation,
+shock,cardiogenic shock|septic shock,
+electrographic cardiac monitoring,telemetry monitoring|electrocardiographic monitoring,
+swan-ganz catheterization for monitoring,pulmonary artery catheter|Swan-Ganz catheter,
+cardiac glycosides,digoxin,
+cardiac stimulants excl. cardiac glycosides,dobutamine|norepinephrine|vasopressor,
+vasodilators used in cardiac diseases,nitroglycerin|nitrate therapy,
+other cardiac preparations in atc,ranolazine|adenosine,
+"antiadrenergic agents, centrally acting",clonidine,
+"antiadrenergic agents, peripherally acting",doxazosin|alpha blocker,
+"arteriolar smooth muscle, agents acting on",hydralazine|minoxidil,
+other antihypertensives in atc,sodium nitroprusside|epoprostenol,
+antihypertensives and diuretics in combination,antihypertensive combination therapy|fixed dose combination antihypertensive,
+beta blocking agents,beta blocker|metoprolol|carvedilol,
+selective calcium channel blockers with mainly vascular effects,amlodipine|dihydropyridine calcium channel blocker,
+selective calcium channel blockers with direct cardiac effects,diltiazem|verapamil,
+non-selective calcium channel blockers,calcium channel blocker,
+"ace inhibitors, plain",ACE inhibitor|angiotensin converting enzyme inhibitor|lisinopril,
+"ace inhibitors, combinations",ACE inhibitor|fixed dose combination antihypertensive,ATC combination classes have no literature phrase of their own; querying the parent agent is the honest approximation
+"angiotensin ii receptor blockers (arbs), plain",angiotensin receptor blocker|losartan|valsartan,
+"angiotensin ii receptor blockers (arbs), combinations",angiotensin receptor blocker|fixed dose combination antihypertensive,
+other agents acting on the renin-angiotensin system in atc,sacubitril valsartan|renin angiotensin system inhibitor,
+
+# --- hepatic ------------------------------------------------------------------------------
+other liver diseases,cirrhosis|ascites|hepatic failure,
+hepatitis,hepatitis,
+alcohol-related disorders,alcoholic cirrhosis|alcohol use disorder,
+pancreatic disorders (not diabetes),pancreatitis,
+
+# --- respiratory ---------------------------------------------------------------------------
+respiratory failure; insufficiency; arrest (adult),respiratory failure|pulmonary edema,
+respiratory intubation and mechanical ventilation,mechanical ventilation,
+other respiratory therapy,noninvasive ventilation|oxygen therapy,
+tracheostomy; temporary and permanent,tracheostomy,
+
+# --- infection ------------------------------------------------------------------------------
+septicemia (except in labor),sepsis|septicemia,
