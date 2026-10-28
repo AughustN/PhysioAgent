@@ -8,10 +8,11 @@ from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Iterable, Sequence
 
+from physioagent.kg import paths
 from physioagent.kg.scope.filter import DEFAULT_PROFILE, load_scope, profiles
 
-KG_DIR = Path(__file__).resolve().parents[1]
-DEFAULT_DATA = KG_DIR / "data"
+KG_DIR = paths.KG_DIR
+DEFAULT_DATA = paths.EHR
 
 TOP_K_COEXISTING = 20
 SIMILARITY_THRESHOLD = 5

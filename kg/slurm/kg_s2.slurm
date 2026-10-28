@@ -21,19 +21,19 @@
 # too big to hold is also a graph too unfocused to walk.
 #
 # S1 MUST HAVE RUN. umls_source.py walks between pairs of concepts that actually
-# co-occurred in this cohort, and that list is kg/data/all_top_coexisting_concepts.json
+# co-occurred in this cohort, and that list is kg/data/ehr/all_top_coexisting_concepts.json
 # from kg_s0s1.slurm. Without it the flow falls back to every in-scope pair -- n^2/2
 # instead of 20n, and no longer EHR-grounded. It warns rather than aborting, so check the
 # log rather than assuming.
 #
 # WHAT TO READ WHEN IT FINISHES:
-#   kg/data/umls/umls_prepare_report.json  seed_names_unresolved -> concepts the whole
+#   kg/data/kg/umls/umls_prepare_report.json  seed_names_unresolved -> concepts the whole
 #                                                                   flow never asks about
 #                                          edge_rows_dropped     -> is out_of_gate ~100%?
 #                                                                   then the gate is too
 #                                                                   strict to connect
 #                                                                   anything
-#   kg/data/umls_report.json               pairs_no_path  -> gate too strict / graph too
+#   kg/data/kg/umls_report.json               pairs_no_path  -> gate too strict / graph too
 #                                                            sparse
 #                                          triples_by_hop -> what the far hops were worth
 #
@@ -60,7 +60,7 @@ PROFILE="${PROFILE:-default}"
 GATE_MODE="${GATE_MODE:-mesh-any}"
 MAX_LENGTH="${MAX_LENGTH:-4}"
 MIN_FREE_MB="${MIN_FREE_MB:-4000}"
-# SKIP_PREPARE=1 when kg/data/umls/ was copied in from a box that already ran the prepare
+# SKIP_PREPARE=1 when kg/data/kg/umls/ was copied in from a box that already ran the prepare
 # step. The tables are a pure function of (release, profile, gate mode, --sab), so copying
 # them is not a shortcut that loses anything -- and the walk reads only three of them,
 # 2.3 MB in total, against 17.6 GB of RRF. The licence travels with the files: they are
@@ -87,8 +87,8 @@ echo "node=$(hostname)  umls=$UMLS_META  profile=$PROFILE  gate=$GATE_MODE" \
      "  skip_prepare=$SKIP_PREPARE"
 if [[ "$SKIP_PREPARE" == "1" ]]; then
     for f in umls_graph.tsv seed_cui.tsv cui_term.tsv; do
-        if [[ ! -f "physioagent/kg/data/umls/$f" ]]; then
-            echo "ABORT: SKIP_PREPARE=1 but physioagent/kg/data/umls/$f is missing." >&2
+        if [[ ! -f "physioagent/kg/data/kg/umls/$f" ]]; then
+            echo "ABORT: SKIP_PREPARE=1 but physioagent/kg/data/kg/umls/$f is missing." >&2
             exit 1
         fi
     done
@@ -102,7 +102,7 @@ else
         fi
     done
 fi
-if [[ ! -f "physioagent/kg/data/all_top_coexisting_concepts.json" ]]; then
+if [[ ! -f "physioagent/kg/data/ehr/all_top_coexisting_concepts.json" ]]; then
     echo "WARNING: S1 output missing; the walk will fall back to every in-scope pair." >&2
 fi
 
@@ -114,7 +114,7 @@ export OPENBLAS_NUM_THREADS=1
 export PYTHONUNBUFFERED=1
 
 if [[ "$SKIP_PREPARE" == "1" ]]; then
-    echo "skipping prepare; using the tables already in kg/data/umls/"
+    echo "skipping prepare; using the tables already in kg/data/kg/umls/"
 else
     python -m physioagent.kg.sources.umls_prepare \
         --umls "$UMLS_META" --profile "$PROFILE" --gate-mode "$GATE_MODE"

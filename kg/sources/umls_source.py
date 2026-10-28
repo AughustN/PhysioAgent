@@ -8,11 +8,12 @@ from collections import Counter, defaultdict, deque
 from pathlib import Path
 from typing import Any, Iterable, Optional
 
+from physioagent.kg import paths
 from physioagent.kg.scope.filter import DEFAULT_PROFILE, Scope, load_scope, profiles
 from physioagent.kg.sources.umls_prepare import DEFAULT_OUT, normalise, seed_names
 
-KG_DIR = Path(__file__).resolve().parents[1]
-DEFAULT_DATA = KG_DIR / "data"
+KG_DIR = paths.KG_DIR
+DEFAULT_DATA = paths.KG
 
 MAX_LENGTH = 4
 MAX_PATHS = 20
@@ -212,6 +213,9 @@ def main() -> int:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--profile", default=DEFAULT_PROFILE, choices=profiles())
     ap.add_argument("--data-dir", default=str(DEFAULT_DATA))
+    ap.add_argument("--top-concepts",
+                    default=str(paths.EHR / "all_top_coexisting_concepts.json"),
+                    help="visit_concepts output (default: kg/data/ehr/)")
     ap.add_argument("--umls-dir", default=str(DEFAULT_OUT),
                     help="where umls_prepare.py wrote its tables")
     ap.add_argument("--max-length", type=int, default=MAX_LENGTH)
@@ -237,7 +241,7 @@ def main() -> int:
     edges = sum(len(v) for v in graph.values()) // 2
     print(f"graph      : {len(graph):,} CUIs, {edges:,} edges")
 
-    top_path = data_dir / "all_top_coexisting_concepts.json"
+    top_path = Path(args.top_concepts)
     top_coexisting = json.loads(top_path.read_text(encoding="utf-8")) \
         if top_path.exists() else None
     if top_coexisting is None:

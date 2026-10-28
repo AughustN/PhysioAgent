@@ -6,8 +6,10 @@ import statistics
 from pathlib import Path
 from typing import Any, Optional
 
-KG_DIR = Path(__file__).resolve().parents[1]
-DEFAULT_DATA = KG_DIR / "data"
+from physioagent.kg import paths
+
+KG_DIR = paths.KG_DIR
+DEFAULT_DATA = paths.EHR
 
 TOP_M = 5
 RECENT_VISITS = 2
@@ -177,7 +179,7 @@ def load_index(doses: list[dict[str, Any]], split: str, data_dir: Path = DEFAULT
     fetch = "scp it back from the cluster (kg_doses_bench.slurm, Bring back)"
     query = _read(Path(profiles or data_dir / f"patient_profiles_doses_{split}.json"), fetch)
     pool = _read(Path(pool_profiles or data_dir / "patient_profiles_doses_train.json"), fetch)
-    traj = _read(Path(pool_trajectories or data_dir / "trajectories_train.json"), fetch)
+    traj = _read(Path(pool_trajectories or paths.RETRIEVAL / "trajectories_train.json"), fetch)
     index = SimilarIndex([r for r in doses if r["split"] == "train"], pool, traj, query, m)
     if not index.pool:
         raise SystemExit("similar-patient pool is empty: no train row has a profile")

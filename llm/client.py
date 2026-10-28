@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
@@ -92,7 +93,11 @@ class LLMClient:
         )
 
     def chat_json(self, system_prompt: str, user_prompt: str,
-                  meta: Optional[dict[str, Any]] = None) -> dict[str, Any]:
+                  meta: Optional[dict[str, Any]] = None,
+                  json_mode: bool = True) -> dict[str, Any]:
+        # json_mode=False drops response_format, for gateways where no route accepts it
+        # (cheaperinference zdr deepseek-v4.1-flash, 2026-10-11: 503 "No compatible
+        # route"). The reply is then only parsed, not enforced, so callers must validate.
         if not self.base_url or not self.model_name:
             raise LLMClientError("LLM base_url/model_name are not configured.")
         if _requires_api_key(self.mode) and not self.api_key:
@@ -106,9 +111,10 @@ class LLMClient:
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
-            "response_format": {"type": "json_object"},
             "temperature": 0,
         }
+        if json_mode:
+            payload["response_format"] = {"type": "json_object"}
         if self.reasoning_effort:
             payload["reasoning_effort"] = self.reasoning_effort
         payload.update(self.extra_body)
@@ -140,6 +146,8 @@ class LLMClient:
             meta["model"] = body.get("model")
             meta["system_fingerprint"] = body.get("system_fingerprint")
         content = body["choices"][0]["message"]["content"]
+        if not json_mode:
+            content = re.sub(r"^\s*```(?:json)?\s*|\s*```\s*$", "", content or "")
         return json.loads(content)
 
 

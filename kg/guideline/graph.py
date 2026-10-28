@@ -8,11 +8,12 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
+from physioagent.kg import paths
 from physioagent.kg.guideline.axis_eval import Mention, build_mentions
 from physioagent.kg.guideline.clusters import norm_name
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[2]
-DATA = PACKAGE_ROOT / "kg" / "data"
+DATA = paths.GUIDELINE
 PASSAGES = DATA / "guideline_passages.jsonl"
 CLUSTERS = DATA / "guideline_clusters.jsonl"
 LINKS = DATA / "guideline_concept_links.jsonl"

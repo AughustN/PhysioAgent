@@ -1,6 +1,5 @@
 #!/bin/bash
-# S0a + S1 + S0b: MIMIC-IV -> in-scope concept sets -> co-occurrence -> the sets S3 pays
-# for, plus the 48 h dosing sequences with censoring resolved.
+# S0a + S1: MIMIC-IV -> in-scope concept sets -> co-occurrence -> the sets S3 pays for.
 #
 #   sbatch physioagent/kg/slurm/kg_s0s1.slurm
 #
@@ -20,7 +19,7 @@
 # than producing a graph with no drugs in it.
 #
 # WHAT TO READ WHEN IT FINISHES, before spending anything on S3:
-#   kg/data/scope_report.json         concepts_never_seen  -> scope too narrow or a
+#   kg/data/ehr/scope_report.json         concepts_never_seen  -> scope too narrow or a
 #                                                             mapping gap
 #                                     unmapped_drugs_top   -> extend drug_to_atc3.csv
 #                                     diagnoses_unmapped   -> the CCS crosswalks are FY2019
@@ -37,8 +36,7 @@
 #                                                             the fallback, and
 #                                                             diagnoses.backoff_in_scope
 #                                                             counts what it rescued.
-#   kg/data/concept_sets_report.json  llm_calls_s3         -> the S3 bill, in calls
-#   kg/data/sequences_report.json     censored_episodes    -> episodes ending before 48 h
+#   kg/data/ehr/concept_sets_report.json  llm_calls_s3         -> the S3 bill, in calls
 #
 #SBATCH --job-name=physioagent-kg-s0s1
 #SBATCH --partition=batch
@@ -101,19 +99,11 @@ export OPENBLAS_NUM_THREADS=1
 python -m physioagent.kg.ehr.build_visits --profile "$PROFILE"
 python -m physioagent.kg.ehr.visit_concepts --profile "$PROFILE"
 
-# S0b runs fine on a laptop from the cohort CSV alone -- but only here can it read
-# admissions.dischtime/deathtime, and without those a late empty slot is ambiguous
-# between "no dose" and "already discharged". Re-run it here so the artifact carries
-# censoring rather than nulls.
-python -m physioagent.kg.ehr.build_sequences \
-    --cohort "${COHORT:-mimic-exploration/output/gate_b_cohort_prior.csv}" \
-    --mimic-root "$MIMIC_ROOT" --profile "$PROFILE"
-
 echo
 echo "=== scope_report.json (head) ==="
 python - <<'PY'
 import json, pathlib
-d = json.loads((pathlib.Path("physioagent/kg/data/scope_report.json")).read_text())
+d = json.loads((pathlib.Path("physioagent/kg/data/ehr/scope_report.json")).read_text())
 for k in ("admissions_seen", "admissions_written", "concepts_observed"):
     print(f"{k:34s} {d[k]:,}")
 print(f"{'concepts never seen':34s} {len(d['concepts_never_seen'])}")
@@ -125,13 +115,8 @@ print(f"{'  backoff would map (icd10)':34s} {u['backoff_would_map'].get('icd10',
 print(f"{'  of those, in scope':34s} {u['backoff_would_be_in_scope'].get('icd10', 0):,}")
 for name, n in list(u["backoff_concepts"].items())[:5]:
     print(f"{'    ' + name[:30]:34s} {n:,}")
-c = json.loads((pathlib.Path("physioagent/kg/data/concept_sets_report.json")).read_text())
+c = json.loads((pathlib.Path("physioagent/kg/data/ehr/concept_sets_report.json")).read_text())
 print(f"{'distinct concept sets':34s} {c['distinct_sets']:,}")
 print(f"{'sets after similarity filter':34s} {c['filtered_sets']:,}")
 print(f"{'S3 LLM calls':34s} {c['llm_calls_s3']:,}")
-q = json.loads((pathlib.Path("physioagent/kg/data/sequences_report.json")).read_text())
-print(f"{'episodes':34s} {q['episodes']:,}")
-print(f"{'  train / test':34s} {q['episodes_by_split'].get('train', 0):,}"
-      f" / {q['episodes_by_split'].get('test', 0):,}")
-print(f"{'censored before 48h':34s} {q['censored_episodes']:,}")
 PY

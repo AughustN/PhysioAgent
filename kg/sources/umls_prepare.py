@@ -9,6 +9,7 @@ from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Iterable, Iterator
 
+from physioagent.kg import paths
 from physioagent.kg.scope.filter import (
     DEFAULT_PROFILE,
     Scope,
@@ -17,9 +18,9 @@ from physioagent.kg.scope.filter import (
     umls_gate,
 )
 
-KG_DIR = Path(__file__).resolve().parents[1]
-DEFAULT_DATA = KG_DIR / "data"
-DEFAULT_OUT = DEFAULT_DATA / "umls"
+KG_DIR = paths.KG_DIR
+DEFAULT_DATA = paths.KG
+DEFAULT_OUT = paths.UMLS
 
 GATE_MODES = ("strict", "mesh-any", "sty-mesh-optional", "sty-or-mesh")
 

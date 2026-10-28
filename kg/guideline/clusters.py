@@ -12,14 +12,15 @@ from typing import Any
 
 import yaml
 
+from physioagent.kg import paths
 from physioagent.kg.guideline.axis_eval import Mention, build_mentions, embed
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[2]
-DATA = PACKAGE_ROOT / "kg" / "data"
+DATA = paths.GUIDELINE
 PASSAGES = DATA / "guideline_passages.jsonl"
-SEED_CUI = DATA / "umls" / "seed_cui.tsv"
-SYNONYMS = DATA / "umls" / "seed_synonyms.tsv"
-CHILD_TERMS = DATA / "umls" / "seed_child_terms.tsv"
+SEED_CUI = paths.UMLS / "seed_cui.tsv"
+SYNONYMS = paths.UMLS / "seed_synonyms.tsv"
+CHILD_TERMS = paths.UMLS / "seed_child_terms.tsv"
 ONTOLOGY = PACKAGE_ROOT / "kg" / "scope" / "ontology.yaml"
 RESOURCES = PACKAGE_ROOT / "kg" / "resources"
 MRCONSO = PACKAGE_ROOT.parent / "umls-2026AA-metathesaurus-full" / "2026AA" / "META" / "MRCONSO.RRF"

@@ -5,7 +5,7 @@ scope: >-
   heart failure, acute kidney injury, chronic kidney disease, cirrhosis with ascites.
   Per area, the latest guideline of a US society, a European society, KDIGO where it
   covers the area, and Japan; plus the FDA labels of furosemide.
-raw_dir: kg/data/guideline_raw
+raw_dir: kg/data/guideline/raw
 
 sources:
   - id: acc_aha_hfsa_2022
@@ -39,6 +39,11 @@ sources:
     version: published
     retrieved_on: 2026-10-01
     sha256: 322859344a36a677292f4c3eeeb82c6289c85e57f4ace002b4e84a56b4ae2f68
+    # The PDF's font maps the en dash to U+0002, so "400–600 mg" extracts as "400\x02600 mg"
+    # and reads as one number (222 digit-digit ranges, also "NYHA II–IV"). One name
+    # ("Aleš") uses the same code point and becomes "Ale–s"; no dose text is affected.
+    glyph_map:
+      "\x02": "–"
 
   - id: esc_hf_2023_update
     title: 2023 Focused Update of the 2021 ESC Guidelines for the diagnosis and treatment of acute and chronic heart failure

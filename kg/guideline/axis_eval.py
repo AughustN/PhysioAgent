@@ -15,11 +15,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
 
+from physioagent.kg import paths
 from physioagent.kg.guideline.passages import split_sentences
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[2]
-PASSAGES = PACKAGE_ROOT / "kg" / "data" / "guideline_passages.jsonl"
-OUT_DIR = PACKAGE_ROOT / "kg" / "data" / "guideline_axis_eval"
+PASSAGES = paths.GUIDELINE / "guideline_passages.jsonl"
+OUT_DIR = paths.GUIDELINE / "guideline_axis_eval"
 ENCODER = "NeuML/pubmedbert-base-embeddings"
 SEED = 20261002
 N_PAIRS = 250

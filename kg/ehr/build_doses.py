@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import random
 import sys
 from collections import Counter, defaultdict
@@ -12,16 +13,57 @@ from typing import Any, Optional
 import numpy as np
 import pandas as pd
 
-from physioagent.kg.ehr.build_sequences import (
-    DEFAULT_COHORT,
-    DEFAULT_DATA,
-    FORBIDDEN_AS_FEATURE,
-    HISTORY_COLS,
-    PRIOR_STATE_COLS,
-    STATE_COLS,
-    _clean,
-    load_events,
-)
+from physioagent.kg import paths
+from physioagent.utils.plausibility import implausible_mask
+
+DEFAULT_DATA = paths.EHR
+DEFAULT_COHORT = "mimic-exploration/output/gate_b_cohort_prior.csv"
+
+STATE_COLS = [
+    "age", "sex", "weight_kg", "height_cm", "bmi", "ckd_stage", "is_ckd",
+    "egfr", "creatinine_mg_dl", "urine_prior24h_ml", "urine_prior24h_present",
+    "predose_sbp", "predose_dbp", "predose_hr", "systolic_bp", "diastolic_bp",
+    "has_chf", "has_diabetes", "has_htn", "aki_creat_safe",
+    "care_unit", "admission_type",
+]
+
+HISTORY_COLS = [
+    "prior_po_daily_mg", "prior_po_days_ago", "prior_po_source",
+    "prior_iv_cum_mg", "loop_naive", "naive_observable",
+]
+
+PRIOR_STATE_COLS = ["egfr", "creatinine_mg_dl", "urine_prior24h_ml", "predose_sbp",
+                    "ckd_stage", "care_unit"]
+
+FORBIDDEN_AS_FEATURE = [
+    "ground_truth_dose_mg", "next_dose_mg", "hours_to_next_dose", "n_doses_adm",
+    "urine_post_ml", "urine_post_hours", "urine_post_rate", "urine_post_present",
+    "response_usable", "nearest_candidate_mg", "in_candidate_set",
+]
+
+
+def _clean(value: Any) -> Any:
+    if value is None:
+        return None
+    if isinstance(value, (np.generic,)):
+        value = value.item()
+    if isinstance(value, float) and math.isnan(value):
+        return None
+    if isinstance(value, pd.Timestamp):
+        return None if pd.isna(value) else value.isoformat()
+    if pd.isna(value) if np.isscalar(value) else False:
+        return None
+    return value
+
+
+def load_events(path: Path, drop_implausible: bool = True) -> pd.DataFrame:
+    df = pd.read_csv(path, parse_dates=["starttime"])
+    if "eligible" in df.columns:
+        df = df[df["eligible"].astype(bool)]
+    if drop_implausible:
+        df = df[~implausible_mask(df)]
+    return df.sort_values(["subject_id", "hadm_id", "starttime"]).reset_index(drop=True)
+
 
 SPLIT_SEED = 20260928
 DEV_FRACTION = 0.15

@@ -10,14 +10,15 @@ from itertools import combinations
 from pathlib import Path
 from typing import Any
 
+from physioagent.kg import paths
 from physioagent.kg.guideline.clusters import norm_name
 from physioagent.kg.retrieval.trajectory import load_graph, paths_between
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[2]
-DATA = PACKAGE_ROOT / "kg" / "data"
-KG = DATA / "kg_refined.jsonl"
+DATA = paths.GUIDELINE
+KG = paths.KG / "kg_refined.jsonl"
 GUIDELINE_GRAPH = DATA / "guideline_graph.json"
-TRAJECTORIES = DATA / "trajectories_dev.json"
+TRAJECTORIES = paths.RETRIEVAL / "trajectories_dev.json"
 OUT = DATA / "guideline_path_probe.json"
 
 CLUSTER_PREFIX = "guideline:"
@@ -120,7 +121,7 @@ def ranking_similarity(graph, guideline: dict[str, Any]):
 
     needed = set(graph.nodes()) | {d.get("relation") for _, _, d in graph.edges(data=True)}
     needed.discard(None)
-    similarity = load_embedding_similarity(DATA, NEUML, (RISK_QUERY, PROTECTIVE_QUERY), None,
+    similarity = load_embedding_similarity(paths.EMBEDDINGS, NEUML, (RISK_QUERY, PROTECTIVE_QUERY), None,
                                            None, needed, local=True)
     model = SentenceTransformer(NEUML)
     for node in guideline["nodes"]["clusters"]:

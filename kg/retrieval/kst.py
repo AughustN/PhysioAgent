@@ -12,12 +12,13 @@ from typing import Any, Optional, Protocol, Sequence
 
 import numpy as np
 
+from physioagent.kg import paths
 from physioagent.kg.retrieval.nli import (DEFAULT_MODEL as NLI_MODEL, PROTECTIVE_HYPOTHESIS,
                                           RISK_HYPOTHESIS, NLIRefiner)
 from physioagent.kg.retrieval.trajectory import PROTECTIVE_QUERY, RISK_QUERY
 
-KG_DIR = Path(__file__).resolve().parents[1]
-DEFAULT_DATA = KG_DIR / "data"
+KG_DIR = paths.KG_DIR
+DEFAULT_DATA = paths.RETRIEVAL
 DEFAULT_ENCODER = "NeuML/pubmedbert-base-embeddings"
 
 LAMBDA = 0.7

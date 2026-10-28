@@ -13,10 +13,11 @@ from pathlib import Path
 from typing import Any, Iterable, Iterator, Optional
 
 import yaml
+from physioagent.kg import paths
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_MANIFEST = Path(__file__).resolve().parent / "manifest.yaml"
-DEFAULT_OUT = PACKAGE_ROOT / "kg" / "data" / "guideline_passages.jsonl"
+DEFAULT_OUT = paths.GUIDELINE / "guideline_passages.jsonl"
 
 MIN_WORDS = 150
 MAX_WORDS = 400
@@ -494,8 +495,11 @@ def build(manifest_path: Path) -> tuple[list[Passage], dict[str, Any]]:
         else:
             blocks = list(read_dailymed(raw_dir / f"{sid}.json"))
             method = "label"
+        glyphs = str.maketrans(source.get("glyph_map") or {})
         made = []
         for n, (section_path, kind, text, loc) in enumerate(chunk(blocks)):
+            text = text.translate(glyphs)
+            section_path = [s.translate(glyphs) for s in section_path]
             made.append(Passage(f"{sid}:{n:04d}", sid, source["region"], source["doc_type"],
                                 source.get("version") or "published", method, section_path,
                                 kind, loc, text, words(text)))

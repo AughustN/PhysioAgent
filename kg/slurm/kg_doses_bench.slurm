@@ -1,6 +1,6 @@
 #!/bin/bash
 # Everything the index-dose benchmark needs from MIMIC, in one job:
-#   profiles (S7) -> trajectories (S8), for train/dev/test of kg/data/doses.json.
+#   profiles (S7) -> trajectories (S8), for train/dev/test of kg/data/ehr/doses.json.
 #   Similar patients are ranked per row inside run_eval_dose (online, as TRACER).
 #
 #   sbatch physioagent/kg/slurm/kg_doses_bench.slurm
@@ -15,10 +15,10 @@
 #
 # The job never writes doses.json: the split the arms are scored on is the one uploaded.
 # Upload it first:
-#   scp PhysioAgent/kg/data/doses.json tphung03@fit-hcmus:$PROJECT/physioagent/kg/data/
+#   scp PhysioAgent/kg/data/ehr/doses.json tphung03@fit-hcmus:$PROJECT/physioagent/kg/data/ehr/
 #
-# WHAT TO BRING BACK (kg/data/): trajectories_{train,dev,test}.json and
-# patient_profiles_doses_{train,dev,test}.json -- run_eval_dose ranks similar patients
+# WHAT TO BRING BACK: kg/data/retrieval/trajectories_{train,dev,test}.json and
+# kg/data/ehr/patient_profiles_doses_{train,dev,test}.json -- run_eval_dose ranks similar patients
 # from them. visits_all.jsonl stays on the node.
 #
 #SBATCH --job-name=physioagent-doses-bench
@@ -51,8 +51,8 @@ cd "$PROJECT"
 export OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
 
 DATA=physioagent/kg/data
-DOSES=$DATA/doses.json
-VISITS=$DATA/visits_all.jsonl
+DOSES=$DATA/ehr/doses.json
+VISITS=$DATA/ehr/visits_all.jsonl
 echo "node=$(hostname)  started $(date)"
 
 if [[ ! -f "$DOSES" ]]; then
@@ -61,7 +61,7 @@ if [[ ! -f "$DOSES" ]]; then
 fi
 python - <<'PY'
 import json, collections, pathlib
-rows = json.loads(pathlib.Path("physioagent/kg/data/doses.json").read_text())
+rows = json.loads(pathlib.Path("physioagent/kg/data/ehr/doses.json").read_text())
 c = collections.Counter(r["split"] for r in rows)
 print("doses.json:", len(rows), "rows ", dict(sorted(c.items())))
 PY
@@ -77,7 +77,7 @@ fi
 # downstream file would still build -- with every time falling back to admittime.
 python - <<'PY'
 import json, itertools
-with open("physioagent/kg/data/visits_all.jsonl", encoding="utf-8") as h:
+with open("physioagent/kg/data/ehr/visits_all.jsonl", encoding="utf-8") as h:
     rows = [json.loads(l) for l in itertools.islice(h, 20000)]
 timed = sum(1 for r in rows if r.get("drug_times") or r.get("procedure_times"))
 dated = sum(1 for r in rows if r.get("admittime"))
@@ -89,8 +89,8 @@ PY
 if [[ "$SIMILARITY" == "embedding" ]]; then
     SLUG=${EMBED_MODEL//\//-}
     for kind in entities relations queries; do
-        if [[ ! -f "$DATA/embeddings_${kind}_${SLUG}.json" ]]; then
-            echo "ABORT: $DATA/embeddings_${kind}_${SLUG}.json missing -- upload it" >&2
+        if [[ ! -f "$DATA/embeddings/embeddings_${kind}_${SLUG}.json" ]]; then
+            echo "ABORT: $DATA/embeddings/embeddings_${kind}_${SLUG}.json missing -- upload it" >&2
             exit 1
         fi
     done
@@ -100,34 +100,34 @@ else
 fi
 
 for split in train dev test; do
-    if [[ "$REUSE_PROFILES" == "1" && -f "$DATA/patient_profiles_doses_${split}.json" ]]; then
-        echo "=== S7 profiles $split: reusing $DATA/patient_profiles_doses_${split}.json"
+    if [[ "$REUSE_PROFILES" == "1" && -f "$DATA/ehr/patient_profiles_doses_${split}.json" ]]; then
+        echo "=== S7 profiles $split: reusing $DATA/ehr/patient_profiles_doses_${split}.json"
         continue
     fi
     echo; echo "=== S7 profiles $split  $(date +%T) ==="
     python -m physioagent.kg.ehr.patient_profiles \
         --doses "$DOSES" --split "$split" --visits "$VISITS" \
-        --out "$DATA/patient_profiles_doses_${split}.json"
+        --out "$DATA/ehr/patient_profiles_doses_${split}.json"
 done
 
 for split in train dev test; do
     echo; echo "=== S8 trajectories $split  $(date +%T) ==="
     python -m physioagent.kg.retrieval.trajectory \
         --doses "$DOSES" --split "$split" \
-        --profiles "$DATA/patient_profiles_doses_${split}.json" \
-        --out "$DATA/trajectories_${split}.json" "${SIM_ARGS[@]}"
-    cp "$DATA/trajectory_report.json" "$DATA/trajectory_report_${split}.json"
+        --profiles "$DATA/ehr/patient_profiles_doses_${split}.json" \
+        --out "$DATA/retrieval/trajectories_${split}.json" "${SIM_ARGS[@]}"
+    cp "$DATA/retrieval/trajectory_report.json" "$DATA/retrieval/trajectory_report_${split}.json"
 done
 
 echo; echo "=== coverage ==="
 python - <<'PY'
 import json, pathlib, statistics
 data = pathlib.Path("physioagent/kg/data")
-doses = json.loads((data / "doses.json").read_text())
+doses = json.loads((data / "ehr" / "doses.json").read_text())
 for split in ("train", "dev", "test"):
     ids = [r["dose_id"] for r in doses if r["split"] == split]
-    prof = json.loads((data / f"patient_profiles_doses_{split}.json").read_text())
-    traj = json.loads((data / f"trajectories_{split}.json").read_text())
+    prof = json.loads((data / "ehr" / f"patient_profiles_doses_{split}.json").read_text())
+    traj = json.loads((data / "retrieval" / f"trajectories_{split}.json").read_text())
     timed = event = total = 0
     for p in prof.values():
         for k, v in p.items():
@@ -141,4 +141,5 @@ for split in ("train", "dev", "test"):
 PY
 echo; echo "done $(date)"
 echo "Bring back:"
-echo "  scp tphung03@fit-hcmus:$PROJECT/$DATA/{trajectories_dev,trajectories_test,patient_profiles_doses_train,patient_profiles_doses_dev,patient_profiles_doses_test,trajectories_train}.json PhysioAgent/kg/data/"
+echo "  scp tphung03@fit-hcmus:$PROJECT/$DATA/retrieval/{trajectories_dev,trajectories_test,trajectories_train}.json PhysioAgent/kg/data/retrieval/"
+echo "  scp tphung03@fit-hcmus:$PROJECT/$DATA/ehr/{patient_profiles_doses_train,patient_profiles_doses_dev,patient_profiles_doses_test}.json PhysioAgent/kg/data/ehr/"

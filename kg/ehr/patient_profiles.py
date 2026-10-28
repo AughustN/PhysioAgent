@@ -11,8 +11,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
+from physioagent.kg import paths
+
 KG_DIR = Path(__file__).resolve().parents[1]
-DEFAULT_DATA = KG_DIR / "data"
+DEFAULT_DATA = paths.EHR
 DEFAULT_COHORT = "mimic-exploration/output/usable_cohort_full.csv"
 
 DEMOGRAPHIC_COLS = ("age", "sex", "weight_kg", "height_cm", "egfr", "ckd_stage")
@@ -178,27 +180,6 @@ def build_profile(row: dict[str, str], admissions: list[dict[str, Any]],
                    demographics=demographics, visits=visits)
 
 
-def rows_from_episodes(path: Path, split: Optional[str] = None) -> list[dict[str, Any]]:
-    episodes = json.loads(path.read_text(encoding="utf-8"))
-    rows: list[dict[str, Any]] = []
-    for episode in episodes:
-        if split and episode["split"] != split:
-            continue
-        state = episode.get("state", {})
-        row: dict[str, Any] = {
-            "instance_id": episode["episode_id"],
-            "subject_id": str(episode["subject_id"]),
-            "hadm_id": str(episode["hadm_id"]),
-            "starttime": episode["t0"].replace("T", " "),
-            "label": episode["labels"]["total_mg"],
-        }
-        for column in DEMOGRAPHIC_COLS:
-            if state.get(column) is not None:
-                row[column] = state[column]
-        rows.append(row)
-    return rows
-
-
 def rows_from_doses(path: Path, split: Optional[str] = None) -> list[dict[str, Any]]:
     records = json.loads(path.read_text(encoding="utf-8"))
     rows: list[dict[str, Any]] = []
@@ -224,20 +205,12 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--cohort", default=DEFAULT_COHORT)
-    ap.add_argument("--episodes", metavar="SEQUENCES_JSON",
-                    help="build one profile per EPISODE from sequences.json instead of "
-                         "one per cohort row, cutting the history at that episode's own "
-                         "t0 and keying on episode_id. The sequence task scores episodes, "
-                         "and 7.8% of test episodes start later than their admission's "
-                         "first dose; --cohort would hand those the wrong history. "
-                         "--sample and --seed are ignored in this mode: the split is the "
-                         "sample.")
     ap.add_argument("--doses", metavar="DOSES_JSON",
                     help="build one profile per scored admission from doses.json "
                          "(build_doses), keyed on dose_id. --sample and --seed are "
                          "ignored: the split is the sample.")
     ap.add_argument("--split", default="test",
-                    help="which split to build with --episodes or --doses (default: test)")
+                    help="which split to build with --doses (default: test)")
     ap.add_argument("--visits", default=str(DEFAULT_DATA / "visits_all.jsonl"),
                     help="S0a's per-admission concept sets WITH ids. Not "
                          "all_visit_concepts.json, which drops them")
@@ -264,14 +237,6 @@ def main() -> int:
                              "physioagent.kg.ehr.build_doses")
         rows = rows_from_doses(doses_path, args.split)
         print(f"doses      : {len(rows)} in split {args.split!r} from {doses_path.name}")
-    elif args.episodes:
-        episodes_path = Path(args.episodes)
-        if not episodes_path.exists():
-            raise SystemExit(f"{episodes_path} not found -- run "
-                             "physioagent.kg.ehr.build_sequences")
-        rows = rows_from_episodes(episodes_path, args.split)
-        print(f"episodes   : {len(rows)} in split {args.split!r} from "
-              f"{episodes_path.name}")
     else:
         cohort_path = Path(args.cohort)
         if not cohort_path.is_absolute():

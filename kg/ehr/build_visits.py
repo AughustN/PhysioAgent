@@ -12,11 +12,12 @@ from typing import Iterator, Optional
 
 import pandas as pd
 
+from physioagent.kg import paths
 from physioagent.kg.scope.filter import DEFAULT_PROFILE, Scope, load_scope, profiles
 
 KG_DIR = Path(__file__).resolve().parents[1]
 RESOURCES = KG_DIR / "resources"
-DEFAULT_OUT = KG_DIR / "data"
+DEFAULT_OUT = paths.EHR
 
 PRESCRIPTION_CHUNK = 2_000_000
 
@@ -432,7 +433,6 @@ def main() -> int:
 
     ndc_table = load_ndc_to_atc3()
     print(f"drug route : NDC table {'present' if ndc_table else 'ABSENT'}"
-          f"{'' if ndc_table else ' (run kg.ehr.export_pyhealth_maps for TRACER parity)'}"
           f", name fallback {'off' if args.no_name_fallback else 'on'}")
     mapper = DrugMapper(load_drug_patterns(), scope, ndc_table,
                         name_fallback=not args.no_name_fallback)

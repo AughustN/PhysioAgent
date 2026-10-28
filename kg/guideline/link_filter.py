@@ -15,6 +15,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
+from physioagent.kg import paths
 from physioagent.kg.guideline.axis_eval import build_mentions
 from physioagent.kg.guideline.clusters import (
     CHILD_TERMS,
@@ -25,7 +26,7 @@ from physioagent.kg.guideline.clusters import (
 )
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[2]
-DATA = PACKAGE_ROOT / "kg" / "data"
+DATA = paths.GUIDELINE
 PASSAGES = DATA / "guideline_passages.jsonl"
 CLUSTERS = DATA / "guideline_clusters.jsonl"
 OUT_DIR = DATA / "guideline_link_eval"

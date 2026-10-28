@@ -100,4 +100,13 @@ llm:
       model_name: deepseek-v4.1-flash
       extra_body:
         zdr: true
+    # Added 2026-10-16: vLLM serving on the GreenNode notebook itself, so no MIMIC row
+    # leaves our machine. Select it with LLM_PROVIDER=local_vllm and LLM_MODE=local (any
+    # mode other than "api" skips the API-key check; vLLM needs none).
+    # model_name must match what `vllm serve` was started with -- vLLM rejects any other
+    # name. Arms scored here are NOT comparable with deepseek-v4.1-flash checkpoints:
+    # point PHYSIOAGENT_DOSE_RESULTS at a separate folder per model.
+    local_vllm:
+      base_url: http://127.0.0.1:8000/v1
+      model_name: google/gemma-3-4b-it
 

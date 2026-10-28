@@ -6,8 +6,10 @@ import json
 from pathlib import Path
 from typing import Any
 
-KG_DIR = Path(__file__).resolve().parents[1]
-DEFAULT_DATA = KG_DIR / "data"
+from physioagent.kg import paths
+
+KG_DIR = paths.KG_DIR
+DEFAULT_DATA = paths.EMBEDDINGS
 DEFAULT_MODEL = "NeuML/pubmedbert-base-embeddings"
 
 
@@ -28,7 +30,7 @@ def graph_vocabulary(path: Path) -> tuple[list[str], list[str]]:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--graph", default=str(DEFAULT_DATA / "kg_refined.jsonl"))
+    ap.add_argument("--graph", default=str(paths.KG / "kg_refined.jsonl"))
     ap.add_argument("--data-dir", default=str(DEFAULT_DATA))
     ap.add_argument("--model", default=DEFAULT_MODEL)
     ap.add_argument("--batch", type=int, default=64)

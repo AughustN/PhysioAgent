@@ -15,12 +15,13 @@ from typing import Any, Callable, Iterable, Optional
 
 import numpy as np
 
+from physioagent.kg import paths
 from physioagent.utils.rate_limit import RateLimiter
 from physioagent.kg.combine import junk_reason
 from physioagent.kg.scope.filter import DEFAULT_PROFILE, load_scope, profiles
 
-KG_DIR = Path(__file__).resolve().parent
-DEFAULT_DATA = KG_DIR / "data"
+KG_DIR = paths.KG_DIR
+DEFAULT_DATA = paths.KG
 
 EMBED_MODEL = "text-embedding-3-large"
 EMB_DIMENSIONS = 1024
@@ -411,6 +412,8 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--data-dir", default=str(DEFAULT_DATA))
+    ap.add_argument("--cache-dir", default=str(paths.EMBEDDINGS),
+                    help="embedding cache (default: kg/data/embeddings/)")
     ap.add_argument("--mrconso", help="path to MRCONSO.RRF; enables the CUI tier")
     ap.add_argument("--no-embeddings", action="store_true",
                     help="tiers 1 and 2 only -- deterministic, free, and fully traceable")
@@ -495,7 +498,7 @@ def main() -> int:
         print(f"pinned     : {len(protected) - len(quantities)} scope concepts and seed "
               f"terms, {len(quantities)} quantities")
 
-    refined, result = refine(edges, cui_index, embed, data_dir,
+    refined, result = refine(edges, cui_index, embed, Path(args.cache_dir),
                              threshold_search=args.threshold_search,
                              embed_model=args.embed_model if embed else None,
                              ent_threshold=args.ent_threshold,

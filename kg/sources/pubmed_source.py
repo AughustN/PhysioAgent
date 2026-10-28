@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any, Iterable, Optional
 
 from physioagent.config.loader import load_settings
+from physioagent.kg import paths
 from physioagent.utils.rate_limit import RateLimiter
 from physioagent.kg.scope.filter import DEFAULT_PROFILE, Scope, load_scope, profiles
 from physioagent.llm.client import (
@@ -27,8 +28,8 @@ from physioagent.llm.client import (
     _load_env_values,
 )
 
-KG_DIR = Path(__file__).resolve().parents[1]
-DEFAULT_DATA = KG_DIR / "data"
+KG_DIR = paths.KG_DIR
+DEFAULT_DATA = paths.KG
 RESOURCES = KG_DIR / "resources"
 
 EUTILS = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/"
@@ -401,6 +402,9 @@ def main() -> int:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--profile", default=DEFAULT_PROFILE, choices=profiles())
     ap.add_argument("--data-dir", default=str(DEFAULT_DATA))
+    ap.add_argument("--top-concepts",
+                    default=str(paths.EHR / "all_top_coexisting_concepts.json"),
+                    help="visit_concepts output (default: kg/data/ehr/)")
     ap.add_argument("--abstracts", type=int, default=ABSTRACTS_PER_CONCEPT)
     ap.add_argument("--limit", type=int, help="first N units only, for a smoke run")
     ap.add_argument("--max-sets", type=int, default=0, metavar="N",
@@ -435,7 +439,7 @@ def main() -> int:
     data_dir = Path(args.data_dir)
     data_dir.mkdir(parents=True, exist_ok=True)
 
-    top_path = data_dir / "all_top_coexisting_concepts.json"
+    top_path = Path(args.top_concepts)
     top_coexisting = json.loads(top_path.read_text(encoding="utf-8")) \
         if top_path.exists() else None
     if top_coexisting is None:

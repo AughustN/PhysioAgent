@@ -9,8 +9,10 @@ from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any, Iterable, Optional
 
-KG_DIR = Path(__file__).resolve().parent
-DEFAULT_DATA = KG_DIR / "data"
+from physioagent.kg import paths
+
+KG_DIR = paths.KG_DIR
+DEFAULT_DATA = paths.KG
 
 SOURCES = {
     "pubmed": "kg_from_pubmed.jsonl",

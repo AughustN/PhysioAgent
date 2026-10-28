@@ -13,8 +13,10 @@ import numpy as np
 
 from typing import Any, Callable, Iterable, Optional, Protocol, Sequence
 
-KG_DIR = Path(__file__).resolve().parents[1]
-DEFAULT_DATA = KG_DIR / "data"
+from physioagent.kg import paths
+
+KG_DIR = paths.KG_DIR
+DEFAULT_DATA = paths.RETRIEVAL
 
 MAX_HOPS = 3
 MAX_PATHS_PER_PAIR = 5
@@ -535,11 +537,10 @@ def build_report(results: dict[str, dict[str, Any]], graph) -> dict[str, Any]:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--graph", default=str(DEFAULT_DATA / "kg_refined.jsonl"))
-    ap.add_argument("--sequences", default=str(DEFAULT_DATA / "sequences.json"))
-    ap.add_argument("--doses", help="doses.json (build_doses) instead of --sequences; "
-                                    "results are keyed on dose_id, which is what "
-                                    "patient_profiles --doses and run_eval_dose use")
+    ap.add_argument("--graph", default=str(paths.KG / "kg_refined.jsonl"))
+    ap.add_argument("--doses", default=str(paths.EHR / "doses.json"),
+                    help="doses.json (build_doses); results are keyed on dose_id, which "
+                         "is what patient_profiles --doses and run_eval_dose use")
     ap.add_argument("--profiles", help="patient_profiles.json; without it the concept "
                                        "set is derived from the episode's state flags")
     ap.add_argument("--split", default="test")
@@ -584,8 +585,8 @@ def main() -> int:
     graph = load_graph(graph_path)
     print(f"graph      : {graph.number_of_nodes()} nodes, {graph.number_of_edges()} edges")
 
-    source = Path(args.doses or args.sequences)
-    id_key = "dose_id" if args.doses else "episode_id"
+    source = Path(args.doses)
+    id_key = "dose_id"
     episodes = [e for e in json.loads(source.read_text(encoding="utf-8"))
                 if e["split"] == args.split]
     profiles = json.loads(Path(args.profiles).read_text(encoding="utf-8")) \
@@ -608,7 +609,7 @@ def main() -> int:
         needed = set(graph.nodes()) | {d.get("relation") for _, _, d in graph.edges(data=True)}
         needed.discard(None)
         similarity = load_embedding_similarity(
-            DEFAULT_DATA, args.embed_model, (RISK_QUERY, PROTECTIVE_QUERY),
+            paths.EMBEDDINGS, args.embed_model, (RISK_QUERY, PROTECTIVE_QUERY),
             api_key, base_url, needed, args.embed_local)
         print(f"similarity : cosine, {args.embed_model}, "
               f"{len(similarity.vectors):,} vectors loaded")
