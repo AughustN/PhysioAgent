@@ -43,7 +43,9 @@ GRID_MG = 10
 GRID_MAX_MG = 200
 TOP_N = 25
 CHUNK = 2_000_000
-EPS = 1e-6
+# inputevents.amount carries float noise (a 40 mg push reads 40.00000093), so every
+# comparison is to within 0.001 mg; no real dose differs by less.
+EPS = 1e-3
 
 USECOLS = ["hadm_id", "starttime", "itemid", "amount", "amountuom",
            "ordercategorydescription", "statusdescription"]
@@ -83,6 +85,10 @@ def first_per_admission(df: pd.DataFrame, window_min: Optional[float] = None) ->
     return df[within].groupby("hadm_id")["amount"].sum()
 
 
+def _near_any(values: np.ndarray, targets) -> np.ndarray:
+    return np.abs(values[:, None] - np.asarray(targets, dtype=float)[None, :]).min(axis=1) < EPS
+
+
 def _is_multiple(values: np.ndarray, step: float) -> np.ndarray:
     return np.abs(values - np.round(values / step) * step) < EPS
 
@@ -103,7 +109,7 @@ def summarize(amounts: pd.Series) -> dict[str, Any]:
         return {"n": n, "pct": _pct(n, total)}
 
     watched = {str(v): share(np.abs(values - v) < EPS) for v in WATCHED}
-    in_old_ladder = np.isin(np.round(values, 6), OLD_LADDER)
+    in_old_ladder = _near_any(values, OLD_LADDER)
     grid = {str(v): share(np.abs(values - v) < EPS)
             for v in range(GRID_MG, GRID_MAX_MG + GRID_MG, GRID_MG)}
     rounded = pd.Series(np.round(values, 3))
@@ -116,7 +122,7 @@ def summarize(amounts: pd.Series) -> dict[str, Any]:
         "not10_multiple_of_5": share(mult5_not10),
         "not10_other_integer": share(integer & ~mult10 & ~mult5_not10),
         "not10_non_integer": share(~integer),
-        "at_30_50_70": share(np.isin(np.round(values, 6), WATCHED)),
+        "at_30_50_70": share(_near_any(values, WATCHED)),
         "watched_values": watched,
         "in_old_ladder": share(in_old_ladder),
         "multiple_of_10_off_old_ladder": share(mult10 & ~in_old_ladder),
