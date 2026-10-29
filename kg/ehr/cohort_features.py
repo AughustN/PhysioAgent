@@ -183,16 +183,22 @@ def discharge_events(pairs: pd.DataFrame, rx: pd.DataFrame) -> pd.DataFrame:
 
 
 def attach(targets: pd.DataFrame, events: pd.DataFrame, pairs: pd.DataFrame) -> pd.DataFrame:
-    """Events of earlier admissions, and of the target admission stored before t_dec."""
+    """Events of earlier admissions, and of the target admission stored before t_dec.
+
+    On the target admission emar counts only before ICU admission: t0 is the first ICU bolus
+    in inputevents, so an emar IV dose between intime and t0 is either the t0 dose charted
+    twice or contradicts t0, and it would leak the label in the first case."""
     prior = pairs[["hadm_id", "prior_hadm"]].merge(
         events, left_on="prior_hadm", right_on="event_hadm_id").drop(columns="prior_hadm")
     prior = prior.assign(scope="prior_admission")
     now = targets[["hadm_id"]].merge(events, left_on="hadm_id", right_on="event_hadm_id")
     now = now.assign(scope="this_admission")
     j = pd.concat([prior, now], ignore_index=True).merge(
-        targets[["hadm_id", "t_dec"]], on="hadm_id")
+        targets[["hadm_id", "t_dec", "intime"]], on="hadm_id")
     keep = (j["time"] < j["t_dec"]) & (j["storetime"].isna() | (j["storetime"] < j["t_dec"]))
-    j = j[keep]
+    in_icu_emar = (j["scope"].eq("this_admission") & j["source"].eq("emar")
+                   & (j["time"] >= j["intime"]))
+    j = j[keep & ~in_icu_emar].drop(columns="intime")
     return j.assign(hours_before_t_dec=_hours(j["t_dec"] - j["time"]))
 
 

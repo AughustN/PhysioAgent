@@ -90,7 +90,10 @@ nhiệt độ 223762 (°C), 223761 (°F → °C).
 | `oral_this_adm_last_mg` | Liều uống gần nhất đã cho lượt này |
 | `icu_infusion_before` | bool: đã từng truyền liên tục và đã ngưng trước T0 (S5 loại ca đang truyền) |
 
-Liều emar lấy từ `emar_detail.dose_given` (+ `dose_given_unit` = mg).
+Liều emar lấy từ `emar_detail.dose_given` (+ `dose_given_unit` = mg). Emar lượt hiện tại chỉ tính bản ghi
+**trước `intime`**: T0 là mũi ICU đầu tiên trong inputevents, nên mũi IV emar giữa `intime` và T0 là ghi
+trùng mũi T0 (lộ nhãn) hoặc mâu thuẫn định nghĩa T0. Kiểm tra trên cohort thật: 11/5.473 ca có mũi emar
+< 1 h trước T0 cùng liều nhãn.
 
 ### H. Lịch sử các lượt trước (tổng hợp từ `history.csv.gz`)
 
@@ -134,7 +137,8 @@ Mã ICD chỉ lấy từ **lượt trước** (mã lượt hiện tại bị c�
 | `creatinine_before`, `creatinine_after_48h` | Gần nhất trước mũi, gần nhất trong 48 h sau (chỉ lượt trước) |
 | `escalated_24h` | bool: mũi IV liều cao hơn trong 24 h sau |
 
-Lượt hiện tại chỉ có đáp ứng nào đã ghi xong trước `t_dec`.
+Đáp ứng chỉ tính khi cả cửa sổ (6 h / 24 h / 48 h) đóng trước `t_dec`, ở mọi lượt; creatinine trước/sau
+chỉ cho lượt trước. Emar lượt hiện tại chỉ lấy trước `intime` (như nhóm F).
 
 ## 3. Cột cấm làm input
 

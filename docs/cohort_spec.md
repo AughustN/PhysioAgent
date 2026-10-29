@@ -38,15 +38,19 @@ Không bước lọc nào được dùng thông tin sau T0, trừ ngoại lệ g
 | S3 | Liều T0 trên ladder; lệch thì bỏ cả lượt (không lấy liều kế) | 24.621 |
 | S4 | Tuổi ≥ 18 tại T0 | 24.621 |
 | S5 | Không đang truyền furosemide liên tục tại T0 | 24.123 |
-| S6 | Bằng chứng CKD (a/b/c, mục 3) | 8.249 |
-| S7 | Không lọc máu trong 24 h trước T0 | 8.165 |
-| S8 | Phụ thuộc lọc máu (Z99.2/V45.11/N18.6/585.6) → cohort 5D riêng (645) | 7.520 |
-| S9 | Creatinine **đã có kết quả** (`storetime`) trong [`t_dec` − 48 h, `t_dec`), nối theo `subject_id` | 7.424 lượt / 6.176 BN |
-| S10 | Lượt cuối đủ tiêu chuẩn mỗi BN | 6.176 mẫu |
+| S6 | Bằng chứng CKD (a/b/c, mục 3; (b) strict) | 7.396 |
+| S7 | Không lọc máu trong 24 h trước T0 | 7.316 |
+| S8 | Phụ thuộc lọc máu (Z99.2/V45.11/N18.6/585.6) → cohort 5D riêng (645 lượt, 528 BN) | 6.671 |
+| S9 | Creatinine **đã có kết quả** (`storetime`) trong [`t_dec` − 48 h, `t_dec`), nối theo `subject_id` | 6.528 lượt / 5.473 BN |
+| S10 | Lượt cuối đủ tiêu chuẩn mỗi BN | 5.473 mẫu |
 
-- Chia theo bệnh nhân 70/15/15 ≈ 4.323 / 926 / 926.
-- Builder: `kg/ehr/cohort_build.py` áp luật (b) strict ở S6 và mốc `t_dec` ở S9 (mốc cắt input phải
-  có creatinine); số mới thay bảng trên sau lần chạy đầu.
+- Số theo `kg/ehr/cohort_build.py` (lần chạy 2026-10-30): S1–S5 như Probe 1; S6 dùng (b) strict, S9 dùng
+  mốc `t_dec`. Chia theo bệnh nhân: train 3.831 / dev 820 / test 822; dải liều cân bằng giữa các tập.
+- Mô tả 5.473 BN: `t_dec` từ y lệnh 85,4%; `ckd_evidence` confirmed 3.350 / index_only 2.123;
+  `decision_context` routine 3.942 / protocol 1.378 / loading 153; tử vong trong viện 1.109 (20,3%).
+- Median liều trên train = 40 mg (≤ 20 mg chiếm 49,8%, sát ranh giới), nên B0 hiện là 40 mg.
+- A3 `unverifiable` 1.752, trong đó 93% thuộc 2008–2013 (thiếu emar), ≈ 0 từ 2017: A3 lẫn với thời gian;
+  tập test theo thời gian gần như không có nhóm này.
 - **Ngoại lệ**: S6(c) và S8 dùng mã ICD của lượt hiện tại (ghi lúc ra viện) — chỉ để chọn ca,
   không làm feature. Kiểm tra bằng phân tích độ nhạy trên nhóm `confirmed`.
 - Không lọc theo tử vong, thời gian nằm viện, hay đáp ứng sau T0.
@@ -130,6 +134,9 @@ Mọi bằng chứng (a), (b) đều nằm **trước** lượt nhập viện m�
   đưa vào input dữ liệu ghi sau quyết định. Probe 2: 85,6% BN có y lệnh khớp; y lệnh → tiêm median
   0,59 h, p90 2,34 h (68,6% ≤ 1 h, 93,4% ≤ 3 h); tần suất ONCE 82%, BID 16%. `t_dec` là một cột,
   không phải cờ. Phân tích độ nhạy: cắt tại T0.
+- **4.7 Emar lượt hiện tại chỉ lấy trước `intime`** (trước khi vào ICU). Mũi IV emar giữa `intime` và T0
+  hoặc là mũi T0 ghi trùng (lộ nhãn), hoặc mâu thuẫn định nghĩa T0 (mũi ICU đầu tiên trong inputevents).
+  Luật không dựa vào nhãn; lọc "mũi trùng liều nhãn" sẽ tự gây rò rỉ.
 - **Liều uống**: MIMIC-IV-ED không có nên không có liều tại nhà. Ước lượng theo thứ tự: đơn uống lúc
   ra viện lượt trước (kèm khoảng cách) → furosemide uống đã tiêm trong lượt hiện tại trước T0 →
   "không rõ". Gọi là "liều uống gần nhất được ghi nhận".
@@ -137,10 +144,10 @@ Mọi bằng chứng (a), (b) đều nằm **trước** lượt nhập viện m�
   đã xác minh zero-retention. Không dùng Gemini API công khai (`provider: gemini` mặc định hiện tại).
 ## 5. Chia tập
 
-- **Chính**: theo bệnh nhân, 70/15/15 (≈ 4.323 / 926 / 926), phân tầng theo dải liều × `ckd_evidence`,
+- **Chính**: theo bệnh nhân, 70/15/15 (3.831 / 820 / 822), phân tầng theo dải liều × `ckd_evidence`,
   seed cố định.
 - **Độ nhạy theo thời gian**: train/dev = BN `anchor_year_group` 2008–2016, test = 2017–2022
-  (≈ 1.000 BN). Giới hạn: `anchor_year_group` là nhóm 3 năm theo BN, không phải năm nhập viện.
+  (train 3.581 / dev 767 / test 1.125). Giới hạn: `anchor_year_group` là nhóm 3 năm theo BN, không phải năm nhập viện.
 - Vai trò: train = kho truy hồi ca tương tự, few-shot, thống kê tri thức; dev = chỉnh prompt/cấu hình;
   test = chạy **một lần** sau khi chốt, không truy hồi hay lấy ví dụ từ test.
 - File ID các tập chỉ lưu trên GreenNode, không commit (DUA).
