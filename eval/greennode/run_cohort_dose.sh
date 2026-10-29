@@ -2,9 +2,13 @@
 # Score the plain arm on the T0 dose cohort with a model served by vLLM on this GreenNode
 # notebook. Nothing leaves the notebook: the model runs on our GPU, no API key is involved.
 #
-#   MODEL=Qwen/Qwen3-8B LIMIT=5 bash physioagent/eval/greennode/run_cohort_dose.sh   # smoke
-#   MODEL=Qwen/Qwen3-8B bash physioagent/eval/greennode/run_cohort_dose.sh           # dev
-#   MODEL=... SCORE=1 bash ...                                                       # score
+#   MODEL=google/gemma-3-12b-it QUANT=fp8 LIMIT=5 bash physioagent/eval/greennode/run_cohort_dose.sh
+#   MODEL=google/gemma-3-12b-it QUANT=fp8 bash ...               # full dev
+#   MODEL=google/gemma-3-12b-it QUANT=fp8 SCORE=1 bash ...       # score
+#
+# Our slice is MIG 2g.20gb (~20 GB): a 12B model fits only with QUANT=fp8 (weights quantized
+# by vLLM at load, H100 runs FP8 natively). A bf16 and an fp8 run are different scorers, so
+# QUANT is part of the results folder name.
 #
 # Run from $CODE (the folder that CONTAINS physioagent/). Starts vLLM if nothing answers on
 # $PORT, and refuses to score if the server answers with a different model. Needs
@@ -21,8 +25,10 @@ SPLIT_COL=${SPLIT_COL:-split}
 LIMIT=${LIMIT:-}
 SCORE=${SCORE:-}
 PORT=${PORT:-8000}
-GPU_UTIL=${GPU_UTIL:-0.6}
-MAX_LEN=${MAX_LEN:-8192}
+QUANT=${QUANT:-}
+GPU_UTIL=${GPU_UTIL:-0.9}
+MAX_LEN=${MAX_LEN:-4096}
+MAX_SEQS=${MAX_SEQS:-8}
 
 source /home/jovyan/physioagent/env.sh
 
@@ -35,7 +41,7 @@ fi
 
 export LLM_PROVIDER=local_vllm LLM_MODE=local MODEL_NAME="$MODEL"
 export OPENAI_BASE_URL="http://127.0.0.1:$PORT/v1"
-SLUG=${MODEL//\//-}
+SLUG=${MODEL//\//-}${QUANT:+-$QUANT}
 export PHYSIOAGENT_DOSE_RESULTS="$ROOT/results/cohort_dose_$SLUG"
 mkdir -p "$PHYSIOAGENT_DOSE_RESULTS" "$ROOT/logs"
 
@@ -47,6 +53,9 @@ if [[ -n "$SCORE" ]]; then
 fi
 
 VLLM_ARGS=()
+if [[ -n "$QUANT" ]]; then
+    VLLM_ARGS+=(--quantization "$QUANT")
+fi
 # Gemma 3 (4B and up) and MedGemma are image-text models; prompts here are text only, so
 # skip the vision memory profile (same flag as run_gemma_dose.sh).
 if [[ "$MODEL" =~ gemma-3-(4b|12b|27b)|medgemma-(4b|27b-it) ]]; then
@@ -72,4 +81,4 @@ if ! curl -sf "$OPENAI_BASE_URL/models" | grep -q "\"$MODEL\""; then
 fi
 
 python -m physioagent.eval.run_cohort_dose --split "$SPLIT" --split-col "$SPLIT_COL" \
-    ${LIMIT:+--limit "$LIMIT"} --workers 16 --rpm 6000
+    ${LIMIT:+--limit "$LIMIT"} --workers "$MAX_SEQS" --rpm 6000
