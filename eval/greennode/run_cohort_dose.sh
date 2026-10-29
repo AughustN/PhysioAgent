@@ -81,7 +81,8 @@ fi
 if ! curl -sf "$OPENAI_BASE_URL/models" >/dev/null; then
     echo "starting vLLM for $MODEL (log: $ROOT/logs/vllm_$SLUG.log)"
     nohup vllm serve "$MODEL" --port "$PORT" \
-        --max-model-len "$MAX_LEN"         --dtype "$DTYPE" \
+        --max-model-len "$MAX_LEN" \
+        --dtype "$DTYPE" \
         --gpu-memory-utilization "$GPU_UTIL" \
         --max-num-seqs "$MAX_SEQS" \
         ${VLLM_ARGS[@]+"${VLLM_ARGS[@]}"} \
