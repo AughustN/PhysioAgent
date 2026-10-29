@@ -66,7 +66,8 @@ mkdir -p "$PHYSIOAGENT_DOSE_RESULTS" "$ROOT/logs"
 cd "$CODE"
 if [[ -n "$SCORE" ]]; then
     python -m physioagent.eval.run_cohort_dose --arm "$ARM" --split "$SPLIT" \
-        --split-col "$SPLIT_COL" --score --save "$PHYSIOAGENT_DOSE_RESULTS/score_${ARM}_${SPLIT_COL}_${SPLIT}.json"
+        --split-col "$SPLIT_COL" --score \
+        --save "$PHYSIOAGENT_DOSE_RESULTS/score_${ARM}_${SPLIT_COL}_${SPLIT}.json"
     exit 0
 fi
 
