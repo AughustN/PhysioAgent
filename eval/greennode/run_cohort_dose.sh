@@ -77,11 +77,19 @@ if ! curl -sf "$OPENAI_BASE_URL/models" >/dev/null; then
     nohup vllm serve "$MODEL" --port "$PORT" \
         --max-model-len "$MAX_LEN" \
         --gpu-memory-utilization "$GPU_UTIL" \
-        --max-num-seqs 16 \
+        --max-num-seqs "$MAX_SEQS" \
         ${VLLM_ARGS[@]+"${VLLM_ARGS[@]}"} \
         > "$ROOT/logs/vllm_$SLUG.log" 2>&1 &
-    for _ in $(seq 1 180); do
+    VLLM_PID=$!
+    # The first start downloads the weights, so wait up to an hour -- but stop as soon as
+    # the server process is gone: a crash at import time otherwise looks like a slow load.
+    for _ in $(seq 1 720); do
         curl -sf "$OPENAI_BASE_URL/models" >/dev/null && break
+        if ! kill -0 "$VLLM_PID" 2>/dev/null; then
+            echo "ABORT: vLLM exited during start-up -- last lines of the log:" >&2
+            tail -n 15 "$ROOT/logs/vllm_$SLUG.log" >&2
+            exit 1
+        fi
         sleep 5
     done
 fi
