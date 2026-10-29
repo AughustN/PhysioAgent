@@ -1,4 +1,8 @@
-"""Score the plain LLM arm on the T0 dose cohort (docs/cohort_spec.md, docs/feature_schema.md).
+"""Score LLM arms on the T0 dose cohort (docs/cohort_spec.md, docs/feature_schema.md).
+
+    plain        the model's own knowledge only
+    plain_calib  plain + how often each dose was ordered in train (an ablation: does the
+                 plain arm fail on calibration, or on reading the patient?)
 
 Each target is one row of features.csv.gz; the LLM sees those columns only, so the arm is
 compared with B0 and B2 on the same inputs. Replies go to a JSONL checkpoint keyed by
@@ -8,6 +12,7 @@ joins it from cohort.csv.gz and prints aggregates only, cells under MIN_CELL sup
     python -m physioagent.eval.run_cohort_dose --split dev --limit 5      # smoke
     python -m physioagent.eval.run_cohort_dose --split dev                 # full dev
     python -m physioagent.eval.run_cohort_dose --split dev --score
+    python -m physioagent.eval.run_cohort_dose --arm plain_calib --split dev
 
 Checkpoints go to $PHYSIOAGENT_DOSE_RESULTS (one folder per scoring model, outside the
 repo: replies quote patient values and stay under the DUA).
@@ -30,11 +35,16 @@ import pandas as pd
 from physioagent.config.loader import load_settings
 from physioagent.kg.ehr.dataset import COHORT_DIR, GROUP_COLUMNS, load_dataset
 from physioagent.llm.client import LLMClient
-from physioagent.llm.cohort_prompts import parse_dose, plain_system_prompt, plain_user_prompt
+from physioagent.llm.cohort_prompts import (
+    calibrated_system_prompt,
+    parse_dose,
+    plain_system_prompt,
+    plain_user_prompt,
+)
 from physioagent.llm.dose_prompts import DOSE_LADDER, snap_to_ladder
 from physioagent.utils.rate_limit import RateLimiter
 
-ARM = "plain"
+ARMS = ("plain", "plain_calib")
 RESULTS_DIR = Path(os.environ.get("PHYSIOAGENT_DOSE_RESULTS")
                    or Path(__file__).resolve().parent / "results" / "cohort_dose")
 MIN_CELL = 10
@@ -62,13 +72,26 @@ def call_with_retry(client: LLMClient, system: str, user: str, attempts: int,
     return None, last, attempts
 
 
-def prompt_sha() -> str:
-    return hashlib.sha256(plain_system_prompt().encode("utf-8")).hexdigest()[:12]
+def prompt_sha(system: str) -> str:
+    return hashlib.sha256(system.encode("utf-8")).hexdigest()[:12]
 
 
-def checkpoint_path(split: str, split_col: str, tag: str = "",
+def system_prompt_for(arm: str, split_col: str, cohort_dir: Path, tag: str = "") -> str:
+    if arm == "plain":
+        return plain_system_prompt()
+    if arm == "plain_calib":
+        # Train labels only, of the same split column the arm is scored on.
+        _, y_train, _ = load_dataset("train", split_col=split_col, cohort_dir=cohort_dir,
+                                     tag=tag)
+        shares = y_train.value_counts(normalize=True)
+        return calibrated_system_prompt({d: float(shares.get(d, 0.0)) for d in DOSE_LADDER},
+                                        len(y_train))
+    raise ValueError(f"unknown arm {arm!r}; expected one of {ARMS}")
+
+
+def checkpoint_path(arm: str, split: str, split_col: str, tag: str = "",
                     results_dir: Optional[Path] = None) -> Path:
-    return Path(results_dir or RESULTS_DIR) / f"cohort_{ARM}_{split_col}_{split}{tag}.jsonl"
+    return Path(results_dir or RESULTS_DIR) / f"cohort_{arm}_{split_col}_{split}{tag}.jsonl"
 
 
 def read_checkpoint(path: Path) -> dict[str, dict[str, Any]]:
@@ -87,13 +110,12 @@ def read_checkpoint(path: Path) -> dict[str, dict[str, Any]]:
 
 
 def one_dose(hadm_id: str, features: pd.Series, client: LLMClient, attempts: int,
-             limiter: Optional[RateLimiter]) -> dict[str, Any]:
+             limiter: Optional[RateLimiter], arm: str, system: str) -> dict[str, Any]:
     started = time.time()
     meta: dict[str, Any] = {}
-    response, error, tries = call_with_retry(client, plain_system_prompt(),
-                                             plain_user_prompt(features), attempts,
-                                             limiter, meta)
-    row: dict[str, Any] = {"hadm_id": hadm_id, "arm": ARM, "prompt_sha": prompt_sha(),
+    response, error, tries = call_with_retry(client, system, plain_user_prompt(features),
+                                             attempts, limiter, meta)
+    row: dict[str, Any] = {"hadm_id": hadm_id, "arm": arm, "prompt_sha": prompt_sha(system),
                            "attempts": tries, "served_model": meta.get("model")}
     usage = meta.get("usage") or {}
     row["prompt_tokens"] = usage.get("prompt_tokens")
@@ -114,31 +136,31 @@ def one_dose(hadm_id: str, features: pd.Series, client: LLMClient, attempts: int
 
 
 def run(X: pd.DataFrame, path: Path, settings: dict[str, Any], workers: int, rpm: int,
-        fresh: bool) -> None:
+        fresh: bool, arm: str, system: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     if fresh and path.exists():
         path.unlink()
     done = read_checkpoint(path)
     # One checkpoint answers one prompt: mixing rows of two prompts would score neither.
-    stale = {r.get("prompt_sha") for r in done.values()} - {prompt_sha()}
+    stale = {r.get("prompt_sha") for r in done.values()} - {prompt_sha(system)}
     if stale:
         raise SystemExit(f"{path.name} holds rows of another prompt {sorted(stale)}; "
                          "rerun with --fresh or point PHYSIOAGENT_DOSE_RESULTS elsewhere")
     todo = [h for h in X.index if done.get(h, {}).get("status") != "ok"]
-    print(f"[{ARM}] {len(todo)} to run, {len(X) - len(todo)} already in {path.name}")
+    print(f"[{arm}] {len(todo)} to run, {len(X) - len(todo)} already in {path.name}")
     if not todo:
         return
     client = LLMClient.from_settings(settings)
     client.timeout = BATCH_TIMEOUT_S
     limiter = RateLimiter(per_min=rpm)
-    print(f"[{ARM}] model={client.model_name} at {client.base_url}, "
+    print(f"[{arm}] model={client.model_name} at {client.base_url}, "
           f"{workers} workers, {rpm}/min")
     lock = threading.Lock()
     written, started = 0, time.time()
     with path.open("a", encoding="utf-8") as handle, \
             ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
-        futures = [pool.submit(one_dose, h, X.loc[h], client, RETRY_ATTEMPTS, limiter)
-                   for h in todo]
+        futures = [pool.submit(one_dose, h, X.loc[h], client, RETRY_ATTEMPTS, limiter, arm,
+                               system) for h in todo]
         for future in as_completed(futures):
             row = future.result()
             with lock:
@@ -147,7 +169,7 @@ def run(X: pd.DataFrame, path: Path, settings: dict[str, Any], workers: int, rpm
                 written += 1
                 if written == 1 or written % 25 == 0 or written == len(todo):
                     rate = written / max(time.time() - started, 1e-9) * 60
-                    print(f"  [{ARM}] {written}/{len(todo)}  {rate:.1f}/min  "
+                    print(f"  [{arm}] {written}/{len(todo)}  {rate:.1f}/min  "
                           f"last={row['status']}", flush=True)
 
 
@@ -216,6 +238,7 @@ def score(path: Path, split: str, split_col: str, cohort_dir: Path, tag: str = "
     models = sorted({str(r.get("served_model")) for r in rows.values() if r.get("served_model")})
     off_menu = [bool(rows[h].get("off_menu")) for h in ok]
     report = {
+        "arm": sorted({str(r.get("arm")) for r in rows.values()}),
         "split": f"{split_col}={split}{tag}", "b0_mg": b0, "served_models": models,
         "prompt_sha": sorted({str(r.get("prompt_sha")) for r in rows.values()}),
         "status": {k: int(v) for k, v in status.value_counts().items()},
@@ -244,6 +267,7 @@ def distribution(doses: pd.Series) -> dict[str, Any]:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--arm", default="plain", choices=ARMS)
     ap.add_argument("--split", default="dev", choices=("train", "dev", "test"))
     ap.add_argument("--split-col", default="split", choices=("split", "split_temporal"))
     ap.add_argument("--cohort-dir", type=Path, default=COHORT_DIR)
@@ -256,7 +280,7 @@ def main() -> int:
     ap.add_argument("--save", type=Path, help="with --score: also write the report here")
     args = ap.parse_args()
 
-    path = checkpoint_path(args.split, args.split_col, args.tag)
+    path = checkpoint_path(args.arm, args.split, args.split_col, args.tag)
     if args.score:
         report = score(path, args.split, args.split_col, args.cohort_dir, args.tag)
         text = json.dumps(report, indent=2)
@@ -269,8 +293,9 @@ def main() -> int:
     X = X.sort_index()
     if args.limit:
         X = X.iloc[:args.limit]
-    run(X, path, load_settings(), args.workers, args.rpm, args.fresh)
-    print(f"[{ARM}] checkpoint {path}")
+    system = system_prompt_for(args.arm, args.split_col, args.cohort_dir, args.tag)
+    run(X, path, load_settings(), args.workers, args.rpm, args.fresh, args.arm, system)
+    print(f"[{args.arm}] checkpoint {path}")
     return 0
 
 

@@ -5,6 +5,7 @@
 #   MODEL=RedHatAI/gemma-3-12b-it-FP8-dynamic LIMIT=5 bash ...   # smoke: 5 dev rows
 #   MODEL=RedHatAI/gemma-3-12b-it-FP8-dynamic bash ...           # full dev
 #   MODEL=RedHatAI/gemma-3-12b-it-FP8-dynamic SCORE=1 bash ...   # score
+#   ARM=plain_calib MODEL=... bash ...                           # calibration ablation
 #
 # Our slice is MIG 2g.20gb (~20 GB). A 12B model fits only as a checkpoint already stored in
 # FP8 (~13 GB). QUANT=fp8 does not help there: vLLM 0.8.5 allocates the weights in bf16
@@ -23,6 +24,7 @@ set -euo pipefail
 ROOT=/network-volume/physioagent
 CODE=$ROOT/code
 MODEL=${MODEL:?set MODEL to the Hugging Face id vLLM should serve}
+ARM=${ARM:-plain}
 SPLIT=${SPLIT:-dev}
 SPLIT_COL=${SPLIT_COL:-split}
 LIMIT=${LIMIT:-}
@@ -63,8 +65,8 @@ mkdir -p "$PHYSIOAGENT_DOSE_RESULTS" "$ROOT/logs"
 
 cd "$CODE"
 if [[ -n "$SCORE" ]]; then
-    python -m physioagent.eval.run_cohort_dose --split "$SPLIT" --split-col "$SPLIT_COL" \
-        --score --save "$PHYSIOAGENT_DOSE_RESULTS/score_${SPLIT_COL}_${SPLIT}.json"
+    python -m physioagent.eval.run_cohort_dose --arm "$ARM" --split "$SPLIT" \
+        --split-col "$SPLIT_COL" --score --save "$PHYSIOAGENT_DOSE_RESULTS/score_${ARM}_${SPLIT_COL}_${SPLIT}.json"
     exit 0
 fi
 
@@ -105,5 +107,5 @@ if ! curl -sf "$OPENAI_BASE_URL/models" | grep -q "\"$MODEL\""; then
     exit 1
 fi
 
-python -m physioagent.eval.run_cohort_dose --split "$SPLIT" --split-col "$SPLIT_COL" \
+python -m physioagent.eval.run_cohort_dose --arm "$ARM" --split "$SPLIT" --split-col "$SPLIT_COL" \
     ${LIMIT:+--limit "$LIMIT"} --workers "$MAX_SEQS" --rpm 6000

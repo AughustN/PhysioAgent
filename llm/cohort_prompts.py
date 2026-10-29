@@ -165,6 +165,27 @@ def plain_system_prompt() -> str:
     return PLAIN_PROMPT
 
 
+if PLAIN_PROMPT.count("\nOUTPUT\n") != 1:
+    raise RuntimeError("PLAIN_PROMPT lost its OUTPUT header; the calibrated prompt splices there")
+
+
+def _share(p: float) -> str:
+    return "<1%" if 0 < p < 0.005 else f"{round(100 * p)}%"
+
+
+def calibrated_system_prompt(shares: Mapping[float, float], n_train: int) -> str:
+    """PLAIN_PROMPT plus the train share of each menu dose, as a base rate."""
+    rows = "\n".join(f"  {dose:>4g} mg  {_share(p)}" for dose, p in shares.items())
+    section = f"""HOW OFTEN EACH DOSE WAS ORDERED
+In {n_train} earlier patients of this same population, the first ICU bolus was:
+{rows}
+These are base rates over all patients, not a rule for this one. Choose a less common
+dose when this patient's own values point to it.
+
+"""
+    return PLAIN_PROMPT.replace("\nOUTPUT\n", "\n" + section + "OUTPUT\n", 1)
+
+
 def plain_user_prompt(row: Mapping[str, Any]) -> str:
     return "\n".join(["PATIENT AT THE DECISION POINT", json.dumps(patient_block(row), indent=2),
                       "", "Answer with the JSON object described above."])
