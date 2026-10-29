@@ -176,6 +176,11 @@ def dose_metrics(y_true: np.ndarray, y_pred: np.ndarray, b0: float) -> dict[str,
     return out
 
 
+def suppressed(m: dict[str, Any]) -> dict[str, Any]:
+    """Metrics over fewer than MIN_CELL patients are not reported (smoke runs included)."""
+    return m if m["n"] >= MIN_CELL else {"n": f"<{MIN_CELL}"}
+
+
 def group_metrics(frame: pd.DataFrame, b0: float) -> dict[str, dict[str, Any]]:
     report: dict[str, dict[str, Any]] = {}
     for col in GROUP_COLUMNS:
@@ -214,9 +219,9 @@ def score(path: Path, split: str, split_col: str, cohort_dir: Path, tag: str = "
         "prompt_sha": sorted({str(r.get("prompt_sha")) for r in rows.values()}),
         "status": {k: int(v) for k, v in status.value_counts().items()},
         "off_menu_rate": round(float(np.mean(off_menu)), 4) if off_menu else None,
-        "answered": dose_metrics(frame["y"].to_numpy(float), frame["pred"].to_numpy(float),
-                                 b0),
-        "all_targets_failed_as_b0": dose_metrics(y_all, imputed, b0),
+        "answered": suppressed(dose_metrics(frame["y"].to_numpy(float),
+                                            frame["pred"].to_numpy(float), b0)),
+        "all_targets_failed_as_b0": suppressed(dose_metrics(y_all, imputed, b0)),
         "by_group": group_metrics(frame, b0),
     }
     band = report["by_group"]["dose_band"]
