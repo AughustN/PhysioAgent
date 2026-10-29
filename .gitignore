@@ -76,6 +76,12 @@ docs/*.pptx
 # One-off dump of comments stripped from the code on 2026-10-01
 historyDocs.txt
 
-# Kept local for now
-eval/
+# Kept local for now, except the cohort dose runner the GreenNode server pulls.
+# eval/results/ holds replies that quote patient values: it stays ignored (DUA).
+eval/*
+!eval/__init__.py
+!eval/run_cohort_dose.py
+!eval/greennode/
+eval/greennode/*
+!eval/greennode/run_cohort_dose.sh
 tests/
