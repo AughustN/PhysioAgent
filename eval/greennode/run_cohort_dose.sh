@@ -32,6 +32,9 @@ QUANT=${QUANT:-}
 GPU_UTIL=${GPU_UTIL:-0.9}
 MAX_LEN=${MAX_LEN:-4096}
 MAX_SEQS=${MAX_SEQS:-8}
+# Explicit, because "auto" follows the checkpoint config: RedHatAI's Gemma 3 FP8 declares
+# float32, which vLLM downcasts to float16, and Gemma 3 overflows in float16.
+DTYPE=${DTYPE:-bfloat16}
 
 # env.sh (vLLM venv, HF_HOME) lived in /home/jovyan, which a notebook restart can wipe.
 # Without it, vllm must already be on PATH; the model cache then goes on the volume.
@@ -78,7 +81,7 @@ fi
 if ! curl -sf "$OPENAI_BASE_URL/models" >/dev/null; then
     echo "starting vLLM for $MODEL (log: $ROOT/logs/vllm_$SLUG.log)"
     nohup vllm serve "$MODEL" --port "$PORT" \
-        --max-model-len "$MAX_LEN" \
+        --max-model-len "$MAX_LEN"         --dtype "$DTYPE" \
         --gpu-memory-utilization "$GPU_UTIL" \
         --max-num-seqs "$MAX_SEQS" \
         ${VLLM_ARGS[@]+"${VLLM_ARGS[@]}"} \
