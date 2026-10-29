@@ -2,13 +2,16 @@
 # Score the plain arm on the T0 dose cohort with a model served by vLLM on this GreenNode
 # notebook. Nothing leaves the notebook: the model runs on our GPU, no API key is involved.
 #
-#   MODEL=google/gemma-3-12b-it QUANT=fp8 LIMIT=5 bash physioagent/eval/greennode/run_cohort_dose.sh
-#   MODEL=google/gemma-3-12b-it QUANT=fp8 bash ...               # full dev
-#   MODEL=google/gemma-3-12b-it QUANT=fp8 SCORE=1 bash ...       # score
+#   MODEL=RedHatAI/gemma-3-12b-it-FP8-dynamic LIMIT=5 bash ...   # smoke: 5 dev rows
+#   MODEL=RedHatAI/gemma-3-12b-it-FP8-dynamic bash ...           # full dev
+#   MODEL=RedHatAI/gemma-3-12b-it-FP8-dynamic SCORE=1 bash ...   # score
 #
-# Our slice is MIG 2g.20gb (~20 GB): a 12B model fits only with QUANT=fp8 (weights quantized
-# by vLLM at load, H100 runs FP8 natively). A bf16 and an fp8 run are different scorers, so
-# QUANT is part of the results folder name.
+# Our slice is MIG 2g.20gb (~20 GB). A 12B model fits only as a checkpoint already stored in
+# FP8 (~13 GB). QUANT=fp8 does not help there: vLLM 0.8.5 allocates the weights in bf16
+# (~24 GB for 12B) and quantizes after loading, and the out-of-memory then surfaces as
+# "NVML_SUCCESS == r INTERNAL ASSERT FAILED", because NVML cannot read memory on a MIG
+# slice. QUANT suits models whose bf16 weights fit. A bf16 and an fp8 run are different
+# scorers, so QUANT is part of the results folder name.
 #
 # Run from $CODE (the folder that CONTAINS physioagent/). Starts vLLM if nothing answers on
 # $PORT, and refuses to score if the server answers with a different model. Needs
