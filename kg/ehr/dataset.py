@@ -12,9 +12,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
+import numpy as np
 import pandas as pd
 
 from physioagent.kg import paths
+from physioagent.kg.ehr.cohort_funnel_probe import DOSE_LADDER
 
 COHORT_DIR = paths.EHR / "cohort"
 
@@ -84,5 +86,9 @@ def load_dataset(split: Optional[str] = None, split_col: str = "split",
         keep = rows[split_col].eq(split).to_numpy()
         rows, X = rows[keep], X[keep]
     index = rows["hadm_id"].to_numpy()
-    return (X.set_index(index), rows[LABEL].set_axis(index),
+    # Labels passed S3 within DOSE_EPS of a rung but keep the charted float (40.0000019):
+    # snap them, or exact-match metrics and class encodings never see a hit.
+    rungs = np.asarray(DOSE_LADDER)
+    label = rungs[np.abs(rows[LABEL].to_numpy(float)[:, None] - rungs).argmin(axis=1)]
+    return (X.set_index(index), pd.Series(label, index=index, name=LABEL),
             rows[GROUP_COLUMNS].set_axis(index))

@@ -38,6 +38,7 @@ ARM = "plain"
 RESULTS_DIR = Path(os.environ.get("PHYSIOAGENT_DOSE_RESULTS")
                    or Path(__file__).resolve().parent / "results" / "cohort_dose")
 MIN_CELL = 10
+CONSTANTS = (10.0, 20.0, 40.0)
 RETRY_ATTEMPTS = 4
 RETRY_BASE_DELAY_S = 2.0
 # A local model behind vLLM queues requests rather than refusing them; a long wait is load.
@@ -227,7 +228,17 @@ def score(path: Path, split: str, split_col: str, cohort_dir: Path, tag: str = "
     band = report["by_group"]["dose_band"]
     maes = [c["mae"] for c in band.values() if "mae" in c]
     report["dose_band_macro_mae"] = round(float(np.mean(maes)), 2) if maes else None
+    # A model that answers one dose for everyone scores like that constant: show both.
+    report["constant_mae"] = {f"{c:g}": round(float(np.abs(c - y_all).mean()), 2)
+                              for c in CONSTANTS}
+    report["pred_distribution"] = distribution(frame["pred"])
+    report["label_distribution"] = distribution(frame["y"])
     return report
+
+
+def distribution(doses: pd.Series) -> dict[str, Any]:
+    counts = doses.round().astype(int).value_counts().sort_index()
+    return {str(k): int(v) if v >= MIN_CELL else f"<{MIN_CELL}" for k, v in counts.items()}
 
 
 def main() -> int:
