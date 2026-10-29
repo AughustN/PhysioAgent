@@ -21,9 +21,11 @@ Annotations on the S9 cohort are counted, never filtered on: CKD tier, emar grou
 in admission / escalation after ward IV / unverifiable), protocol context (transfusion,
 albumin, post cardiac surgery), via ED, care unit, anchor_year_group, dose distribution.
 
-Only aggregate counts are written. Nothing keyed to a patient leaves this script.
+Only aggregate counts are written to the report. --save-cohort additionally writes the S9
+cohort (patient-level) under kg/data/, which is gitignored; it feeds cohort_feature_probe and
+must stay on the server.
 
-    python -m physioagent.kg.ehr.cohort_funnel_probe --mimic-root <mimic-iv-3.1>
+    python -m physioagent.kg.ehr.cohort_funnel_probe --mimic-root <mimic-iv-3.1> [--save-cohort]
 """
 from __future__ import annotations
 
@@ -79,6 +81,12 @@ INHALED = re.compile(r"inhal|\bneb", re.IGNORECASE)
 INHALED_ROUTES = {"IH", "NEB"}
 # An IV furosemide order entered just before t0 may be the order for the t0 dose itself.
 ORDER_WINDOWS_H = (1, 6, 24)
+
+# Patient-level S9 cohort handed to cohort_feature_probe; kg/data is gitignored (DUA).
+COHORT_FILE = paths.EHR / "probe_cohort.csv.gz"
+COHORT_COLUMNS = ["subject_id", "hadm_id", "stay_id", "t0", "dose_mg", "admittime", "intime",
+                  "gender", "anchor_age", "anchor_year", "anchor_year_group", "ckd_tier",
+                  "emar_group", "protocol_any"]
 
 
 def _log(msg: str) -> None:
@@ -230,6 +238,12 @@ def near_t0(cohort: pd.DataFrame, events: pd.DataFrame) -> set:
                             & (j["starttime"] <= j["t0"] + after))
 
 
+def administered(event_txt: pd.Series) -> pd.Series:
+    """emar rows where the dose was given ("Administered", not "Not Given" variants)."""
+    return (event_txt.str.contains("Administered", case=False)
+            & ~event_txt.str.contains(r"\bnot\b", case=False))
+
+
 def classify_route(furo: pd.DataFrame, pharmacy_route: pd.Series,
                    detail: pd.DataFrame) -> pd.DataFrame:
     """Route per emar row from pharmacy, then emar_detail, then the product name."""
@@ -304,6 +318,9 @@ def main() -> int:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--mimic-root", help="directory holding hosp/ and icu/ (default $MIMIC_ROOT)")
     ap.add_argument("--out", default=str(paths.EHR / "cohort_funnel_probe.json"))
+    ap.add_argument("--save-cohort", metavar="PATH", nargs="?", const=str(COHORT_FILE),
+                    help="also write the S9 cohort (patient-level, stays on the server) for "
+                         f"cohort_feature_probe; default path {COHORT_FILE}")
     args = ap.parse_args()
     root = resolve_mimic_root(args.mimic_root)
     _log(f"mimic root {root}")
@@ -465,9 +482,7 @@ def main() -> int:
         observable |= set(chunk["hadm_id"])
         furo_rows.append(chunk[chunk["medication"].str.contains("furosemide", case=False)])
     furo_all = pd.concat(furo_rows, ignore_index=True)
-    given = (furo_all["event_txt"].str.contains("Administered", case=False)
-             & ~furo_all["event_txt"].str.contains(r"\bnot\b", case=False))
-    furo = furo_all[given]
+    furo = furo_all[administered(furo_all["event_txt"])]
     _log("reading hosp/emar_detail (route, product)")
     furo_ids = set(furo["emar_id"])
     detail = _read_filtered(root, "hosp", "emar_detail",
@@ -610,6 +625,11 @@ def main() -> int:
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(report, indent=2, default=str), encoding="utf-8")
     _log(f"wrote {out}")
+    if args.save_cohort:
+        cohort_out = Path(args.save_cohort)
+        cohort_out.parent.mkdir(parents=True, exist_ok=True)
+        cohort[COHORT_COLUMNS].to_csv(cohort_out, index=False)
+        _log(f"wrote {cohort_out} (patient-level: keep on the server, never commit or share)")
     return 0
 
 

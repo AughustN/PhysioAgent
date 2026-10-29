@@ -1,6 +1,6 @@
 # Cohort spec — liều IV furosemide tại T0 ở bệnh nhân CKD (MIMIC-IV 3.1, hosp + icu)
 
-Trạng thái: mục 1–6 và cờ đã chốt (2026-10-29), trừ 4.1 chờ probe.
+Trạng thái: mục 1–6 và cờ đã chốt (2026-10-29), trừ 4.6 chờ Probe 2.
 Số liệu lấy từ Probe 1 (`kg/ehr/cohort_funnel_probe.py`), chỉ là số tổng hợp.
 
 ## 1. Đơn vị mẫu, T0, nhãn, input
@@ -57,7 +57,7 @@ Quy tắc: cờ nhóm A **không bao giờ vào input**. Cờ mới phải xếp
 |---|---|---|
 | A1 `ckd_evidence` | `confirmed` / `index_only` | `ckd_tier` (giữ 5 mức chi tiết trong file) |
 | A2 `decision_context` | `routine` / `protocol` / `loading_for_infusion` / `comfort_care` | truyền máu, albumin, sau mổ tim (cửa sổ [T0−2 h, T0+1 h]); bắt đầu truyền ≤ 1 h sau T0; Code Status. Ưu tiên khi trùng: comfort > loading > protocol |
-| A3 `prior_exposure` | `naive` / `prior_admission` / `ward_this_admission` / `unverifiable` | `emar_group` + lịch sử lượt trước |
+| A3 `prior_exposure` | `naive` / `prior_admission` / `ward_this_admission` / `unverifiable` | `emar_group` + lịch sử lượt trước (Probe 1: escalation 17,9% trong các ca có emar; unverifiable 41%) |
 
 Kèm dải liều của nhãn (≤20 / 40–60 / ≥80) cho metric macro — suy từ nhãn, không phải cờ.
 
@@ -97,10 +97,19 @@ Mọi bằng chứng (a), (b) đều nằm **trước** lượt nhập viện m�
   `hospital_expire_flag`, thời gian nằm viện, `transfers`/`services` sau T0, mọi tổng hợp tính trên
   cả lượt nhập viện. Mọi tổng hợp phải tính trong cửa sổ trước T0.
 - Dữ liệu sau T0 lưu file riêng, chỉ cho đánh giá.
-- **4.1 (chờ kiểm tra)**: y lệnh furosemide IV trước T0 (`pharmacy`/`prescriptions`, thời điểm hiển thị
-  = `pharmacy.entertime`) có thể chính là y lệnh của mũi T0 → lộ nhãn. Probe đo tỉ lệ ca có y lệnh IV
-  trong 1/6/24 h trước T0 và tỉ lệ liều y lệnh gần nhất = nhãn. Nếu cao: lượt hiện tại chỉ dùng bản ghi
-  **đã tiêm**, không dùng y lệnh. `poe` chưa kiểm (không có liều).
+- **4.1 Cấm y lệnh furosemide của lượt hiện tại** (`prescriptions`, `pharmacy`, `poe`). Lượt hiện tại
+  chỉ dùng bản ghi **đã tiêm** (`emar` Administered, `inputevents`); y lệnh lượt trước được dùng.
+  Bằng chứng (Probe 1, `pharmacy.entertime` < T0, liều từ `prescriptions`):
+
+  | Cửa sổ trước T0 | Có y lệnh IV | Liều y lệnh gần nhất = nhãn |
+  |---|---|---|
+  | 1 h | 60,6% cohort | 94,6% |
+  | 6 h | 85,7% | 94,4% |
+  | 24 h | 88,8% | 93,9% |
+
+- **4.6 (chờ Probe 2)**: thời điểm quyết định là lúc ra y lệnh, có thể sớm hơn lúc tiêm vài giờ.
+  Lựa chọn: (a) cắt dữ liệu tại lúc tiêm; (b) cắt tại `entertime` của y lệnh IV gần nhất khớp liều
+  trong 24 h, không có thì lúc tiêm. Probe 2 đo khoảng y lệnh → tiêm và tỉ lệ y lệnh lặp lại.
 - **Liều uống**: MIMIC-IV-ED không có nên không có liều tại nhà. Ước lượng theo thứ tự: đơn uống lúc
   ra viện lượt trước (kèm khoảng cách) → furosemide uống đã tiêm trong lượt hiện tại trước T0 →
   "không rõ". Gọi là "liều uống gần nhất được ghi nhận".
