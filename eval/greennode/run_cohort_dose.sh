@@ -30,7 +30,17 @@ GPU_UTIL=${GPU_UTIL:-0.9}
 MAX_LEN=${MAX_LEN:-4096}
 MAX_SEQS=${MAX_SEQS:-8}
 
-source /home/jovyan/physioagent/env.sh
+# env.sh (vLLM venv, HF_HOME) lived in /home/jovyan, which a notebook restart can wipe.
+# Without it, vllm must already be on PATH; the model cache then goes on the volume.
+ENV_SH=${ENV_SH:-/home/jovyan/physioagent/env.sh}
+if [[ -f "$ENV_SH" ]]; then
+    source "$ENV_SH"
+fi
+export HF_HOME=${HF_HOME:-$ROOT/hf_cache}
+if [[ -z "$SCORE" ]] && ! command -v vllm >/dev/null; then
+    echo "ABORT: vllm not on PATH and $ENV_SH missing -- install vLLM or set ENV_SH" >&2
+    exit 1
+fi
 
 # A .env file outranks the variables below (llm/client.py reads it first) and may point
 # LLM_PROVIDER at an external API. MIMIC rows must not reach one.
