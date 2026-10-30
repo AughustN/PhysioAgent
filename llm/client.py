@@ -162,12 +162,13 @@ class LLMClient:
             meta["key_order"] = [p[0] for p in pairs] if isinstance(pairs, list) else []
         return json.loads(content)
 
-    def score_continuations(self, system_prompt: str, user_prompt: str, prefix: str,
-                            continuations: list[str]) -> list[float]:
-        """Log-probability of each continuation once the reply has reached `prefix`, as the
-        served model scores it (no guided decoding). vLLM only: /tokenize renders the chat
-        template, and prompt_logprobs scores tokens the request supplies, so a continuation
-        of several tokens ("120}") is scored whole."""
+    def next_token_logprobs(self, system_prompt: str, user_prompt: str, prefix: str,
+                            suffixes: list[str], top: int = 20) -> list[dict[str, float]]:
+        """For each suffix, the `top` most likely next tokens (decoded text -> logprob) once
+        the reply reads prefix + suffix, as the served model scores them (no guided
+        decoding). vLLM only: /tokenize renders the chat template. Only the last position
+        is scored; prompt_logprobs would build full-vocabulary logits for every prompt
+        token, which ran a 20 GB slice out of memory on Gemma 3 (262k vocabulary)."""
         base = (self.base_url or "").rstrip("/")
         root = re.sub(r"/v1$", "", base)
         messages = [{"role": "system", "content": system_prompt},
@@ -175,18 +176,14 @@ class LLMClient:
         head = self._post_json(root + "/tokenize", {"model": self.model_name,
                                                     "messages": messages,
                                                     "add_generation_prompt": True})["tokens"]
-        head = head + self._tokens(root, prefix)
-        tails = [self._tokens(root, text) for text in continuations]
+        prompts = [head + self._tokens(root, prefix + suffix) for suffix in suffixes]
         body = self._post_json(base + "/completions", {
-            "model": self.model_name, "prompt": [head + ids for ids in tails],
-            "max_tokens": 1, "temperature": 0, "prompt_logprobs": 1})
+            "model": self.model_name, "prompt": prompts, "max_tokens": 1,
+            "temperature": 0, "logprobs": top})
         choices = sorted(body["choices"], key=lambda c: c["index"])
-        scores = []
-        for choice, ids in zip(choices, tails):
-            positions = choice["prompt_logprobs"][len(head):]
-            scores.append(sum(float(pos[str(token)]["logprob"])
-                              for pos, token in zip(positions, ids)))
-        return scores
+        return [{str(token): float(lp)
+                 for token, lp in (choice["logprobs"]["top_logprobs"][0] or {}).items()}
+                for choice in choices]
 
     def _tokens(self, root: str, text: str) -> list[int]:
         return self._post_json(root + "/tokenize", {"model": self.model_name, "prompt": text,

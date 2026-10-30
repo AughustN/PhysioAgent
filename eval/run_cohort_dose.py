@@ -7,7 +7,8 @@
                  (kg/guideline/t0_rules.py); the reply names the rules it relies on
 
 --dose-logprobs (E2) also asks the served model, once the reply has reached "dose_mg":,
-how likely each menu dose is (vLLM only, no guided decoding). --score then reads the dose
+how likely each menu dose is, digit by digit (vLLM only, no guided decoding: the dose is
+read off the model's own distribution, not off the grammar). --score then reads the dose
 out of that distribution as well: its median (the MAE-optimal choice), mean, mode, and
 the same after batch calibration (Zhou et al., ICLR 2024: divide by the mean distribution
 over the split, which uses no label). If the distribution orders patients while the
@@ -31,6 +32,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 import re
 import threading
@@ -139,22 +141,36 @@ def read_checkpoint(path: Path) -> dict[str, dict[str, Any]]:
     return rows
 
 
-def dose_continuations(content: str) -> tuple[str, list[str]]:
-    """The reply up to the dose value, and each menu dose followed by what closed the
-    number in the reply ("}"), so that "20" is not scored as the start of "200"."""
-    match = list(DOSE_KEY.finditer(content))[-1]
-    rest = content[match.end():]
-    number = re.match(r"\d+", rest)
-    tail = rest[number.end():] if number else ""
-    close = tail[:tail.index("}") + 1] if "}" in tail else "}"
-    return content[:match.end()], [f"{dose}{close}" for dose in MENU]
+def dose_prefix(content: str) -> str:
+    """The reply up to where the dose value starts."""
+    return content[:list(DOSE_KEY.finditer(content))[-1].end()]
+
+
+DIGITS = set("0123456789")
+# Every digit string a menu dose passes through: "", "1", "10", "100", "12", ... Gemma
+# writes one digit per token, so log P(120) = log P(1|"") + log P(2|"1") + log P(0|"12")
+# + log P(the number ends|"120"), the end being every next token that is not a digit.
+DIGIT_NODES = sorted({str(d)[:i] for d in MENU for i in range(len(str(d)) + 1)})
 
 
 def dose_logprobs(client: LLMClient, system: str, user: str, content: str
-                  ) -> dict[str, float]:
-    prefix, continuations = dose_continuations(content)
-    scores = client.score_continuations(system, user, prefix, continuations)
-    return {str(dose): round(float(s), 5) for dose, s in zip(MENU, scores)}
+                  ) -> tuple[dict[str, float], int]:
+    """log P(dose) for every menu dose, and how many digit tokens fell outside the top
+    tokens returned (each is then given the smallest logprob returned, an upper bound)."""
+    tops = dict(zip(DIGIT_NODES, client.next_token_logprobs(system, user, dose_prefix(content),
+                                                            DIGIT_NODES)))
+    out, missing = {}, 0
+    for dose in MENU:
+        text, lp = str(dose), 0.0
+        for i, digit in enumerate(text):
+            node = tops[text[:i]]
+            if digit not in node:
+                missing += 1
+            lp += node.get(digit, min(node.values(), default=-30.0))
+        p_digit = sum(math.exp(v) for k, v in tops[text].items() if k in DIGITS)
+        lp += math.log(max(1.0 - p_digit, 1e-12))
+        out[str(dose)] = round(lp, 5)
+    return out, missing
 
 
 def rule_ranges(features: pd.Series) -> dict[str, Optional[list[int]]]:
@@ -196,8 +212,8 @@ def one_dose(hadm_id: str, features: pd.Series, client: LLMClient, attempts: int
                 row["cited_rules"] = sorted(set(RULE_ID.findall(reasoning + " " + factor)))
             if with_logprobs:
                 try:
-                    row["dose_logprobs"] = dose_logprobs(client, system, user,
-                                                         meta.get("content") or "")
+                    row["dose_logprobs"], row["dose_logprobs_missing"] = dose_logprobs(
+                        client, system, user, meta.get("content") or "")
                 except Exception as exc:  # noqa: BLE001 - the dose itself is still scored
                     row["dose_logprobs_error"] = f"{type(exc).__name__}: {exc}"[:300]
     row["elapsed_s"] = round(time.time() - started, 2)
@@ -408,6 +424,8 @@ def score(path: Path, split: str, split_col: str, cohort_dir: Path, tag: str = "
     }
     if any("dose_logprobs" in r or "dose_logprobs_error" in r for r in rows.values()):
         report["dose_logprobs_errors"] = sum("dose_logprobs_error" in r for r in rows.values())
+        report["dose_logprobs_rows_with_a_digit_outside_top"] = sum(
+            bool(r.get("dose_logprobs_missing")) for r in rows.values())
         report["distribution_readout"] = distribution_readout(rows, y, b0)
     uses = rule_use(rows, ok)
     if uses is not None:

@@ -8,9 +8,8 @@
 #   ARM=plain_calib MODEL=... bash ...                           # calibration ablation
 #   ARM=guideline LOGPROBS=1 MODEL=... bash ...                  # rules arm, with E2
 #
-# LOGPROBS=1 (E2) scores every menu dose with prompt_logprobs, which vLLM serves only with
-# prefix caching off, so the server is started with --no-enable-prefix-caching. A server
-# already running from an earlier start keeps its flags: stop it first (pkill -f "vllm serve").
+# LOGPROBS=1 (E2) scores every menu dose from next-token logprobs, 19 one-token requests
+# per patient that share the prompt, so prefix caching (on by default) keeps them cheap.
 #
 # Our slice is MIG 2g.20gb (~20 GB). A 12B model fits only as a checkpoint already stored in
 # FP8 (~13 GB). QUANT=fp8 does not help there: vLLM 0.8.5 allocates the weights in bf16
@@ -85,9 +84,6 @@ fi
 # skip the vision memory profile (same flag as run_gemma_dose.sh).
 if [[ "$MODEL" =~ gemma-3-(4b|12b|27b)|medgemma-(4b|27b-it) ]]; then
     VLLM_ARGS+=(--limit-mm-per-prompt image=0)
-fi
-if [[ -n "$LOGPROBS" ]]; then
-    VLLM_ARGS+=(--no-enable-prefix-caching)
 fi
 
 if ! curl -sf "$OPENAI_BASE_URL/models" >/dev/null; then
