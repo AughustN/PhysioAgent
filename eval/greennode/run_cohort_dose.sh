@@ -92,7 +92,10 @@ fi
 
 if ! curl -sf "$OPENAI_BASE_URL/models" >/dev/null; then
     echo "starting vLLM for $MODEL (log: $ROOT/logs/vllm_$SLUG.log)"
+    # --disable-log-requests: vLLM otherwise writes every prompt, patient values included,
+    # into the log, which then cannot be shown to anyone when a request fails.
     nohup vllm serve "$MODEL" --port "$PORT" \
+        --disable-log-requests \
         --max-model-len "$MAX_LEN" \
         --dtype "$DTYPE" \
         --gpu-memory-utilization "$GPU_UTIL" \
