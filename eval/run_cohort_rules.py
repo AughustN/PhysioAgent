@@ -217,19 +217,22 @@ def anchors(X: pd.DataFrame, rules: pd.DataFrame, y: pd.Series) -> dict[str, Any
         "by_days_since_oral_record": _split(
             ratio, _bins(_num(X, "oral_recorded_days")[on], ORAL_DAYS_BINS), quantiles)}
 
+    # Anchors are rounded to 0.1 mg: inputevents amounts carry float noise (39.99998), which
+    # would read as "lower" against a label on the ladder.
     on = rules["R4_status"].eq(tr.FIRES)
-    last = _num(X, "ward_iv_last_mg")[on]
-    diff = y[on] - last
+    last = _num(X, "ward_iv_last_mg")[on].round(1)
+    diff, ratio = y[on] - last, y[on] / last
+    hours = _bins(_num(X, "ward_iv_last_hours_ago")[on], WARD_HOURS_BINS)
     n_doses = _num(X, "ward_iv_n")[on].map(lambda n: "1" if n == 1 else "ge2")
     out["R4_label_vs_last_ward_dose"] = {
         "all": relation(diff),
-        "label_over_last": quantiles(y[on] / last),
-        "by_hours_since_last": _split(
-            diff, _bins(_num(X, "ward_iv_last_hours_ago")[on], WARD_HOURS_BINS), relation),
+        "label_over_last": quantiles(ratio),
+        "by_hours_since_last": {"relation": _split(diff, hours, relation),
+                                "label_over_last": _split(ratio, hours, quantiles)},
         "by_ward_doses": _split(diff, n_doses, relation)}
 
     on = rules["R5_status"].eq(tr.FIRES)
-    prior = _num(X, "prior_icu_first_bolus_mg")[on]
+    prior = _num(X, "prior_icu_first_bolus_mg")[on].round(1)
     ratio, diff = y[on] / prior, y[on] - prior
     branch = (_num(X, "prior_icu_first_bolus_uo_6h_ml")[on] < tr.INADEQUATE_UO_6H_ML).map(
         {True: "inadequate", False: "adequate"})
