@@ -81,6 +81,7 @@ historyDocs.txt
 eval/*
 !eval/__init__.py
 !eval/run_cohort_dose.py
+!eval/run_cohort_rules.py
 !eval/greennode/
 eval/greennode/*
 !eval/greennode/run_cohort_dose.sh

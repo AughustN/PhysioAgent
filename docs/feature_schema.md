@@ -112,6 +112,7 @@ trùng mũi T0 (lộ nhãn) hoặc mâu thuẫn định nghĩa T0. Kiểm tra tr
 | `prior_infusion` | bool: từng truyền liên tục ở lượt trước |
 | `prior_last_furo_days` | Ngày từ lần tiêm furosemide gần nhất (mọi lượt trước) |
 | `oral_recorded_mg` | Liều uống gần nhất được ghi nhận (spec 4.4) |
+| `oral_recorded_daily_mg` | Tổng liều uống một ngày của nguồn đó: đơn ra viện = liều × số lần/ngày theo `frequency` (QID/Q6H 4, TID/Q8H 3, BID/Q12H 2, DAILY/QD/Q24H/QAM/QPM/QHS 1, Q48H/QOD 0,5; một lần hoặc PRN → trống); uống lượt này = tổng mg trong 24 h kết thúc ở liều uống cuối. Thêm 2026-10-30 cho luật ESC 2021 "1–2 lần liều uống mỗi ngày" |
 | `oral_recorded_source` | `prior_discharge_rx` / `this_admission` / `unknown` (ưu tiên theo thứ tự này, spec 4.4) |
 | `oral_recorded_days` | |
 | `prior_hf` | bool: I50 / 428 ở lượt trước |

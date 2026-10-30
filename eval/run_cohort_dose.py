@@ -36,10 +36,13 @@ from physioagent.config.loader import load_settings
 from physioagent.kg.ehr.dataset import COHORT_DIR, GROUP_COLUMNS, load_dataset
 from physioagent.llm.client import LLMClient
 from physioagent.llm.cohort_prompts import (
+    DOSE_SCHEMA,
+    REPLY_KEYS,
     calibrated_system_prompt,
     parse_dose,
     plain_system_prompt,
     plain_user_prompt,
+    prompt_signature,
 )
 from physioagent.llm.dose_prompts import DOSE_LADDER, snap_to_ladder
 from physioagent.utils.rate_limit import RateLimiter
@@ -63,7 +66,7 @@ def call_with_retry(client: LLMClient, system: str, user: str, attempts: int,
         if limiter is not None:
             limiter.acquire()
         try:
-            return client.chat_json(system, user, meta), None, attempt
+            return client.chat_json(system, user, meta, schema=DOSE_SCHEMA), None, attempt
         except Exception as exc:  # noqa: BLE001 - any failure is retried, then recorded
             last = f"{type(exc).__name__}: {exc}"
             if attempt < attempts:
@@ -73,7 +76,8 @@ def call_with_retry(client: LLMClient, system: str, user: str, attempts: int,
 
 
 def prompt_sha(system: str) -> str:
-    return hashlib.sha256(system.encode("utf-8")).hexdigest()[:12]
+    text = system + "\n" + prompt_signature()
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
 
 
 def system_prompt_for(arm: str, split_col: str, cohort_dir: Path, tag: str = "") -> str:
@@ -116,7 +120,8 @@ def one_dose(hadm_id: str, features: pd.Series, client: LLMClient, attempts: int
     response, error, tries = call_with_retry(client, system, plain_user_prompt(features),
                                              attempts, limiter, meta)
     row: dict[str, Any] = {"hadm_id": hadm_id, "arm": arm, "prompt_sha": prompt_sha(system),
-                           "attempts": tries, "served_model": meta.get("model")}
+                           "attempts": tries, "served_model": meta.get("model"),
+                           "key_order": meta.get("key_order")}
     usage = meta.get("usage") or {}
     row["prompt_tokens"] = usage.get("prompt_tokens")
     row["completion_tokens"] = usage.get("completion_tokens")
@@ -237,12 +242,15 @@ def score(path: Path, split: str, split_col: str, cohort_dir: Path, tag: str = "
                         for h in y.index], dtype=float)
     models = sorted({str(r.get("served_model")) for r in rows.values() if r.get("served_model")})
     off_menu = [bool(rows[h].get("off_menu")) for h in ok]
+    ordered = [rows[h]["key_order"] == REPLY_KEYS for h in ok if rows[h].get("key_order")]
     report = {
         "arm": sorted({str(r.get("arm")) for r in rows.values()}),
         "split": f"{split_col}={split}{tag}", "b0_mg": b0, "served_models": models,
         "prompt_sha": sorted({str(r.get("prompt_sha")) for r in rows.values()}),
         "status": {k: int(v) for k, v in status.value_counts().items()},
         "off_menu_rate": round(float(np.mean(off_menu)), 4) if off_menu else None,
+        # Share of replies that wrote reasoning, then primary_factor, then the dose.
+        "reasoning_first_rate": round(float(np.mean(ordered)), 4) if ordered else None,
         "answered": suppressed(dose_metrics(frame["y"].to_numpy(float),
                                             frame["pred"].to_numpy(float), b0)),
         "all_targets_failed_as_b0": suppressed(dose_metrics(y_all, imputed, b0)),

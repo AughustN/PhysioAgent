@@ -94,10 +94,13 @@ class LLMClient:
 
     def chat_json(self, system_prompt: str, user_prompt: str,
                   meta: Optional[dict[str, Any]] = None,
-                  json_mode: bool = True) -> dict[str, Any]:
+                  json_mode: bool = True,
+                  schema: Optional[dict[str, Any]] = None) -> dict[str, Any]:
         # json_mode=False drops response_format, for gateways where no route accepts it
         # (cheaperinference zdr deepseek-v4.1-flash, 2026-10-11: 503 "No compatible
         # route"). The reply is then only parsed, not enforced, so callers must validate.
+        # schema sends a json_schema response_format instead: vLLM's guided decoding then
+        # enforces the keys, their order and any enum, which json_object does not.
         if not self.base_url or not self.model_name:
             raise LLMClientError("LLM base_url/model_name are not configured.")
         if _requires_api_key(self.mode) and not self.api_key:
@@ -113,7 +116,10 @@ class LLMClient:
             ],
             "temperature": 0,
         }
-        if json_mode:
+        if schema is not None:
+            payload["response_format"] = {"type": "json_schema", "json_schema": {
+                "name": "reply", "schema": schema, "strict": True}}
+        elif json_mode:
             payload["response_format"] = {"type": "json_object"}
         if self.reasoning_effort:
             payload["reasoning_effort"] = self.reasoning_effort
@@ -148,6 +154,11 @@ class LLMClient:
         content = body["choices"][0]["message"]["content"]
         if not json_mode:
             content = re.sub(r"^\s*```(?:json)?\s*|\s*```\s*$", "", content or "")
+        if meta is not None:
+            # Keys in the order the model wrote them: reasoning written before the dose is
+            # part of the explanation claim, and a parsed dict alone cannot show it.
+            pairs = json.loads(content, object_pairs_hook=list)
+            meta["key_order"] = [p[0] for p in pairs] if isinstance(pairs, list) else []
         return json.loads(content)
 
 

@@ -47,6 +47,12 @@ RESPONSE_CREAT_H = 48
 ESCALATION_H = 24
 OMR_WEIGHT_DAYS = 365
 DISCHARGE_ACTIVE_H = 24
+ORAL_DAY_H = 24
+# Administrations per day of a pharmacy frequency, first match wins. One-off and PRN orders
+# have no daily total and stay NaN.
+DOSES_PER_DAY = [(r"\bQID\b|\bQ6H", 4.0), (r"\bTID\b|\bQ8H", 3.0),
+                 (r"\bBID\b|\bQ12H", 2.0), (r"\bQ48H|\bQOD\b|EVERY OTHER DAY", 0.5),
+                 (r"DAILY|\bQD\b|\bQ24H|\bQAM\b|\bQPM\b|\bQHS\b|\bQDAY\b|ONCE A DAY", 1.0)]
 LB_TO_KG = 0.453592
 
 PRIOR_DX = {"prior_hf": {"10": ("I50",), "9": ("428",)},
@@ -204,6 +210,21 @@ def attach(targets: pd.DataFrame, events: pd.DataFrame, pairs: pd.DataFrame) -> 
 
 # --- aggregates -------------------------------------------------------------------------------
 
+def doses_per_day(frequency: pd.Series) -> pd.Series:
+    freq = frequency.fillna("").str.upper()
+    out = pd.Series(np.nan, index=frequency.index)
+    for pattern, n in reversed(DOSES_PER_DAY):   # reversed: the first pattern is applied last
+        out[freq.str.contains(pattern, regex=True)] = n
+    return out
+
+
+def oral_day_total(oral_now: pd.DataFrame) -> pd.Series:
+    """Oral mg given in the 24 h ending at the last oral dose before ICU admission."""
+    last = oral_now.groupby("hadm_id")["hours_before_t_dec"].transform("min")
+    day = oral_now[oral_now["hours_before_t_dec"] < last + ORAL_DAY_H]
+    return day.groupby("hadm_id")["dose_mg"].sum(min_count=1)
+
+
 def history_features(targets: pd.DataFrame, hist: pd.DataFrame) -> pd.DataFrame:
     idx = targets["hadm_id"]
     given = hist[~hist["kind"].eq("discharge_rx")]
@@ -228,6 +249,12 @@ def history_features(targets: pd.DataFrame, hist: pd.DataFrame) -> pd.DataFrame:
                         np.where(idx.isin(on.index), "this_admission", "unknown"))
     oral_mg = np.where(oral_src == "this_admission",
                        on["dose_mg"].reindex(idx).to_numpy(dtype=float), oral_mg)
+    # Guidelines dose IV from the daily oral total (ESC 2021: 1-2 times the daily oral dose).
+    dc_daily = dc["dose_mg"] * doses_per_day(dc["frequency"])
+    oral_daily = np.where(oral_src == "prior_discharge_rx",
+                          dc_daily.reindex(idx).to_numpy(dtype=float),
+                          oral_day_total(oral_now).reindex(idx).to_numpy(dtype=float))
+    oral_daily = np.where(oral_src == "unknown", np.nan, oral_daily)
     oral_days = np.where(oral_src == "prior_discharge_rx",
                          (dc["hours_before_t_dec"] / 24).reindex(idx).to_numpy(dtype=float),
                          (on["hours_before_t_dec"] / 24).reindex(idx).to_numpy(dtype=float))
@@ -259,6 +286,7 @@ def history_features(targets: pd.DataFrame, hist: pd.DataFrame) -> pd.DataFrame:
     out[counts] = out[counts].fillna(0).astype(int)
     out[flags] = out[flags].eq(True).astype(int)
     out["oral_recorded_mg"] = oral_mg
+    out["oral_recorded_daily_mg"] = oral_daily
     out["oral_recorded_source"] = oral_src
     out["oral_recorded_days"] = oral_days
     return out

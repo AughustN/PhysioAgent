@@ -37,7 +37,8 @@ HISTORY = ["n_prior_admissions", "days_since_last_discharge", "src_emar_prior",
            "prior_furo_admissions", "prior_iv_n", "prior_iv_last_mg", "prior_iv_median_mg",
            "prior_iv_max_mg", "prior_icu_first_bolus_mg", "prior_icu_first_bolus_days",
            "prior_icu_first_bolus_uo_6h_ml", "prior_icu_first_bolus_escalated", "prior_infusion",
-           "prior_last_furo_days", "oral_recorded_mg", "oral_recorded_source",
+           "prior_last_furo_days", "oral_recorded_mg", "oral_recorded_daily_mg",
+           "oral_recorded_source",
            "oral_recorded_days", "prior_hf", "prior_cirrhosis", "prior_diabetes"]
 FEATURE_COLUMNS = DEMOGRAPHIC + VITALS + LABS + KIDNEY + URINE + THIS_ADMISSION + HISTORY
 CATEGORICAL = ["weight_source", "admission_type", "first_careunit", "service_at_t_dec",

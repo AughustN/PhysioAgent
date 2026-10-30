@@ -96,6 +96,7 @@ FIELDS = [
     ("furosemide_this_admission", "oral_this_adm_last_mg", "ward_oral_last_dose_mg"),
     ("furosemide_this_admission", "icu_infusion_before", "icu_infusion_given_and_stopped"),
     ("oral_loop_diuretic", "oral_recorded_mg", "last_recorded_oral_dose_mg"),
+    ("oral_loop_diuretic", "oral_recorded_daily_mg", "last_recorded_oral_total_mg_per_day"),
     ("oral_loop_diuretic", "oral_recorded_source", "recorded_in"),
     ("oral_loop_diuretic", "oral_recorded_days", "recorded_days_ago"),
     ("prior_admissions", "n_prior_admissions", "n_prior_admissions"),
@@ -118,6 +119,19 @@ FIELDS = [
     ("prior_admissions", "prior_diabetes", "diabetes_coded"),
 ]
 SECTIONS = list(dict.fromkeys(section for section, _, _ in FIELDS))
+# Guided decoding enforces this: keys in this order (the reasoning is written before the
+# dose it argues for) and a dose from the menu only.
+DOSE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "reasoning": {"type": "string"},
+        "primary_factor": {"type": "string"},
+        "dose_mg": {"type": "integer", "enum": [10, 20, 40, 60, 80, 100, 120, 140, 160, 200]},
+    },
+    "required": ["reasoning", "primary_factor", "dose_mg"],
+    "additionalProperties": False,
+}
+REPLY_KEYS = list(DOSE_SCHEMA["properties"])
 BOOLEAN = {"sex_female", "transplant_prior", "via_ed", "stage_from_t_dec", "src_emar_this_adm",
            "icu_infusion_before", "src_emar_prior", "prior_infusion",
            "prior_icu_first_bolus_escalated", "prior_hf", "prior_cirrhosis", "prior_diabetes"}
@@ -189,6 +203,11 @@ dose when this patient's own values point to it.
 def plain_user_prompt(row: Mapping[str, Any]) -> str:
     return "\n".join(["PATIENT AT THE DECISION POINT", json.dumps(patient_block(row), indent=2),
                       "", "Answer with the JSON object described above."])
+
+
+def prompt_signature() -> str:
+    """What else, besides the system prompt, shapes a reply: the fields and the schema."""
+    return json.dumps({"fields": FIELDS, "schema": DOSE_SCHEMA}, sort_keys=True)
 
 
 def parse_dose(response: Any) -> Optional[float]:
