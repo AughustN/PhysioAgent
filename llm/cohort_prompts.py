@@ -1,16 +1,24 @@
-"""Prompts for the T0 dose task on the cohort of docs/cohort_spec.md (plain arm).
+"""Prompts for the T0 dose task on the cohort of docs/cohort_spec.md.
 
 The user prompt shows the LLM the same columns B2 sees (kg/ehr/dataset.FEATURE_COLUMNS),
 renamed and grouped so they read without the schema. The system prompt carries no number
 measured on any cohort: what a plain LLM brings is its own clinical knowledge.
+
+The guideline arm adds, after the patient block, only the rules of kg/guideline/t0_rules.py
+that fire for this patient, with the patient's values filled in. No cohort number enters
+there either: the rules come from the guideline text.
 """
 from __future__ import annotations
 
+import hashlib
+import inspect
 import json
 import math
 from typing import Any, Mapping, Optional
 
 import pandas as pd
+
+from physioagent.kg.guideline import t0_rules as tr
 
 PLAIN_PROMPT = """You are an experienced critical-care physician choosing the first \
 intravenous furosemide BOLUS for a patient with chronic kidney disease who is in the ICU. \
@@ -132,6 +140,7 @@ DOSE_SCHEMA = {
     "additionalProperties": False,
 }
 REPLY_KEYS = list(DOSE_SCHEMA["properties"])
+MENU = DOSE_SCHEMA["properties"]["dose_mg"]["enum"]
 BOOLEAN = {"sex_female", "transplant_prior", "via_ed", "stage_from_t_dec", "src_emar_this_adm",
            "icu_infusion_before", "src_emar_prior", "prior_infusion",
            "prior_icu_first_bolus_escalated", "prior_hf", "prior_cirrhosis", "prior_diabetes"}
@@ -203,6 +212,54 @@ dose when this patient's own values point to it.
 def plain_user_prompt(row: Mapping[str, Any]) -> str:
     return "\n".join(["PATIENT AT THE DECISION POINT", json.dumps(patient_block(row), indent=2),
                       "", "Answer with the JSON object described above."])
+
+
+GUIDELINE_SECTION = """GUIDELINE RULES
+After the patient block come the guideline rules that apply to this patient. Code has
+checked each rule against the record and filled in this patient's values. "Stated in"
+means the source gives both the condition and the dose; "our reading of" means the source
+gives the idea and the threshold or mapping is ours. The rules say what the guidelines
+recommend; the team may have ordered otherwise, and you are scored on what the team
+ordered. Name the id of every rule you rely on in your reasoning, e.g. [R3].
+
+"""
+SOURCE_NAMES = {"esc_hf_2021": "ESC HF 2021", "hfa_diuretics_2019": "HFA 2019",
+                "dailymed_furosemide": "the furosemide label",
+                "aasld_ascites_2021": "AASLD 2021", "acc_aha_hfsa_2022": "ACC/AHA/HFSA 2022"}
+TIER_NAMES = {"guideline": "stated in", "operationalization": "our reading of"}
+NO_RULE = "none of the rules applies to this patient's record"
+
+
+def guideline_system_prompt() -> str:
+    return PLAIN_PROMPT.replace("\nOUTPUT\n", "\n" + GUIDELINE_SECTION + "OUTPUT\n", 1)
+
+
+def fired_rules(row: Mapping[str, Any]) -> dict[str, tr.Firing]:
+    return {rule_id: f for rule_id, f in tr.evaluate(row).items() if f.status == tr.FIRES}
+
+
+def rule_lines(row: Mapping[str, Any]) -> list[str]:
+    lines = []
+    for rule_id, f in fired_rules(row).items():
+        rule = tr.RULES[rule_id]
+        sources = ", ".join(dict.fromkeys(SOURCE_NAMES.get(c.passage_id.split(":")[0],
+                                                           c.passage_id.split(":")[0])
+                                          for c in rule.citations))
+        lines.append(f"[{rule_id}] {rule.title}. This patient: {f.text} "
+                     f"({TIER_NAMES[rule.tier]} {sources})")
+    return lines
+
+
+def guideline_user_prompt(row: Mapping[str, Any]) -> str:
+    return "\n".join(["PATIENT AT THE DECISION POINT", json.dumps(patient_block(row), indent=2),
+                      "", "GUIDELINE RULES THAT APPLY", *(rule_lines(row) or [NO_RULE]),
+                      "", "Answer with the JSON object described above."])
+
+
+def rules_signature() -> str:
+    """The rule code and how it is rendered: a change to either changes the guideline arm."""
+    text = inspect.getsource(tr) + json.dumps([SOURCE_NAMES, TIER_NAMES, NO_RULE])
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 def prompt_signature() -> str:

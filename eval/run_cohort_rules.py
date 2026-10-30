@@ -37,6 +37,7 @@ from physioagent.eval.run_cohort_dose import (
     dose_metrics,
     group_metrics,
     read_checkpoint,
+    spearman,
     suppressed,
 )
 from physioagent.kg.ehr.dataset import COHORT_DIR, load_dataset
@@ -146,13 +147,6 @@ def relation(diff: pd.Series) -> Any:
         return f"n<{MIN_CELL}"
     return {"n": n, "lower": _cell(int((diff < 0).sum()), n),
             "equal": _cell(int((diff == 0).sum()), n), "higher": _cell(int((diff > 0).sum()), n)}
-
-
-def spearman(a: pd.Series, b: pd.Series) -> Optional[float]:
-    # Ranks then Pearson: Series.corr(method="spearman") would need scipy.
-    if len(a) < MIN_CELL or a.nunique() < 2 or b.nunique() < 2:
-        return None
-    return round(float(a.rank().corr(b.rank())), 3)
 
 
 def _metrics(y: pd.Series, pred: pd.Series, b0: float) -> dict[str, Any]:

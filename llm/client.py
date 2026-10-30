@@ -155,11 +155,56 @@ class LLMClient:
         if not json_mode:
             content = re.sub(r"^\s*```(?:json)?\s*|\s*```\s*$", "", content or "")
         if meta is not None:
+            meta["content"] = content
             # Keys in the order the model wrote them: reasoning written before the dose is
             # part of the explanation claim, and a parsed dict alone cannot show it.
             pairs = json.loads(content, object_pairs_hook=list)
             meta["key_order"] = [p[0] for p in pairs] if isinstance(pairs, list) else []
         return json.loads(content)
+
+    def score_continuations(self, system_prompt: str, user_prompt: str, prefix: str,
+                            continuations: list[str]) -> list[float]:
+        """Log-probability of each continuation once the reply has reached `prefix`, as the
+        served model scores it (no guided decoding). vLLM only: /tokenize renders the chat
+        template, and prompt_logprobs scores tokens the request supplies, so a continuation
+        of several tokens ("120}") is scored whole."""
+        base = (self.base_url or "").rstrip("/")
+        root = re.sub(r"/v1$", "", base)
+        messages = [{"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}]
+        head = self._post_json(root + "/tokenize", {"model": self.model_name,
+                                                    "messages": messages,
+                                                    "add_generation_prompt": True})["tokens"]
+        head = head + self._tokens(root, prefix)
+        tails = [self._tokens(root, text) for text in continuations]
+        body = self._post_json(base + "/completions", {
+            "model": self.model_name, "prompt": [head + ids for ids in tails],
+            "max_tokens": 1, "temperature": 0, "prompt_logprobs": 1})
+        choices = sorted(body["choices"], key=lambda c: c["index"])
+        scores = []
+        for choice, ids in zip(choices, tails):
+            positions = choice["prompt_logprobs"][len(head):]
+            scores.append(sum(float(pos[str(token)]["logprob"])
+                              for pos, token in zip(positions, ids)))
+        return scores
+
+    def _tokens(self, root: str, text: str) -> list[int]:
+        return self._post_json(root + "/tokenize", {"model": self.model_name, "prompt": text,
+                                                    "add_special_tokens": False})["tokens"]
+
+    def _post_json(self, url: str, payload: dict[str, Any]) -> dict[str, Any]:
+        request = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"),
+                                         headers=_request_headers(self.api_key), method="POST")
+        try:
+            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            detail = f"HTTP {exc.code}: {exc.reason}"
+            body = _read_http_error_body(exc)
+            raise LLMClientError(f"LLM API call failed: {detail}"
+                                 + (f" - {body}" if body else "")) from exc
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+            raise LLMClientError(f"LLM API call failed: {exc}") from exc
 
 
 def _chat_completions_endpoint(base_url: str) -> str:

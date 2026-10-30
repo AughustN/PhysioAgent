@@ -6,6 +6,11 @@
 #   MODEL=RedHatAI/gemma-3-12b-it-FP8-dynamic bash ...           # full dev
 #   MODEL=RedHatAI/gemma-3-12b-it-FP8-dynamic SCORE=1 bash ...   # score
 #   ARM=plain_calib MODEL=... bash ...                           # calibration ablation
+#   ARM=guideline LOGPROBS=1 MODEL=... bash ...                  # rules arm, with E2
+#
+# LOGPROBS=1 (E2) scores every menu dose with prompt_logprobs, which vLLM serves only with
+# prefix caching off, so the server is started with --no-enable-prefix-caching. A server
+# already running from an earlier start keeps its flags: stop it first (pkill -f "vllm serve").
 #
 # Our slice is MIG 2g.20gb (~20 GB). A 12B model fits only as a checkpoint already stored in
 # FP8 (~13 GB). QUANT=fp8 does not help there: vLLM 0.8.5 allocates the weights in bf16
@@ -29,6 +34,7 @@ SPLIT=${SPLIT:-dev}
 SPLIT_COL=${SPLIT_COL:-split}
 LIMIT=${LIMIT:-}
 SCORE=${SCORE:-}
+LOGPROBS=${LOGPROBS:-}
 PORT=${PORT:-8000}
 QUANT=${QUANT:-}
 GPU_UTIL=${GPU_UTIL:-0.9}
@@ -80,6 +86,9 @@ fi
 if [[ "$MODEL" =~ gemma-3-(4b|12b|27b)|medgemma-(4b|27b-it) ]]; then
     VLLM_ARGS+=(--limit-mm-per-prompt image=0)
 fi
+if [[ -n "$LOGPROBS" ]]; then
+    VLLM_ARGS+=(--no-enable-prefix-caching)
+fi
 
 if ! curl -sf "$OPENAI_BASE_URL/models" >/dev/null; then
     echo "starting vLLM for $MODEL (log: $ROOT/logs/vllm_$SLUG.log)"
@@ -109,4 +118,4 @@ if ! curl -sf "$OPENAI_BASE_URL/models" | grep -q "\"$MODEL\""; then
 fi
 
 python -m physioagent.eval.run_cohort_dose --arm "$ARM" --split "$SPLIT" --split-col "$SPLIT_COL" \
-    ${LIMIT:+--limit "$LIMIT"} --workers "$MAX_SEQS" --rpm 6000
+    ${LIMIT:+--limit "$LIMIT"} ${LOGPROBS:+--dose-logprobs} --workers "$MAX_SEQS" --rpm 6000

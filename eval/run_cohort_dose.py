@@ -3,6 +3,15 @@
     plain        the model's own knowledge only
     plain_calib  plain + how often each dose was ordered in train (an ablation: does the
                  plain arm fail on calibration, or on reading the patient?)
+    guideline    plain + the guideline rules that fire for this patient, values filled in
+                 (kg/guideline/t0_rules.py); the reply names the rules it relies on
+
+--dose-logprobs (E2) also asks the served model, once the reply has reached "dose_mg":,
+how likely each menu dose is (vLLM only, no guided decoding). --score then reads the dose
+out of that distribution as well: its median (the MAE-optimal choice), mean, mode, and
+the same after batch calibration (Zhou et al., ICLR 2024: divide by the mean distribution
+over the split, which uses no label). If the distribution orders patients while the
+generated dose does not, the collapse to 20 mg is in the readout, not in the knowledge.
 
 Each target is one row of features.csv.gz; the LLM sees those columns only, so the arm is
 compared with B0 and B2 on the same inputs. Replies go to a JSONL checkpoint keyed by
@@ -23,6 +32,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -37,17 +47,25 @@ from physioagent.kg.ehr.dataset import COHORT_DIR, GROUP_COLUMNS, load_dataset
 from physioagent.llm.client import LLMClient
 from physioagent.llm.cohort_prompts import (
     DOSE_SCHEMA,
+    MENU,
     REPLY_KEYS,
     calibrated_system_prompt,
+    fired_rules,
+    guideline_system_prompt,
+    guideline_user_prompt,
     parse_dose,
     plain_system_prompt,
     plain_user_prompt,
     prompt_signature,
+    rules_signature,
 )
 from physioagent.llm.dose_prompts import DOSE_LADDER, snap_to_ladder
 from physioagent.utils.rate_limit import RateLimiter
 
-ARMS = ("plain", "plain_calib")
+ARMS = ("plain", "plain_calib", "guideline")
+RULE_ARMS = {"guideline"}
+DOSE_KEY = re.compile(r'"dose_mg"\s*:\s*')
+RULE_ID = re.compile(r"\bR[1-5]\b")
 RESULTS_DIR = Path(os.environ.get("PHYSIOAGENT_DOSE_RESULTS")
                    or Path(__file__).resolve().parent / "results" / "cohort_dose")
 MIN_CELL = 10
@@ -75,14 +93,22 @@ def call_with_retry(client: LLMClient, system: str, user: str, attempts: int,
     return None, last, attempts
 
 
-def prompt_sha(system: str) -> str:
+def prompt_sha(system: str, arm: str = "plain") -> str:
     text = system + "\n" + prompt_signature()
+    if arm in RULE_ARMS:
+        text += "\n" + rules_signature()
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
+
+
+def user_prompt_for(arm: str, features: pd.Series) -> str:
+    return guideline_user_prompt(features) if arm in RULE_ARMS else plain_user_prompt(features)
 
 
 def system_prompt_for(arm: str, split_col: str, cohort_dir: Path, tag: str = "") -> str:
     if arm == "plain":
         return plain_system_prompt()
+    if arm == "guideline":
+        return guideline_system_prompt()
     if arm == "plain_calib":
         # Train labels only, of the same split column the arm is scored on.
         _, y_train, _ = load_dataset("train", split_col=split_col, cohort_dir=cohort_dir,
@@ -113,15 +139,43 @@ def read_checkpoint(path: Path) -> dict[str, dict[str, Any]]:
     return rows
 
 
+def dose_continuations(content: str) -> tuple[str, list[str]]:
+    """The reply up to the dose value, and each menu dose followed by what closed the
+    number in the reply ("}"), so that "20" is not scored as the start of "200"."""
+    match = list(DOSE_KEY.finditer(content))[-1]
+    rest = content[match.end():]
+    number = re.match(r"\d+", rest)
+    tail = rest[number.end():] if number else ""
+    close = tail[:tail.index("}") + 1] if "}" in tail else "}"
+    return content[:match.end()], [f"{dose}{close}" for dose in MENU]
+
+
+def dose_logprobs(client: LLMClient, system: str, user: str, content: str
+                  ) -> dict[str, float]:
+    prefix, continuations = dose_continuations(content)
+    scores = client.score_continuations(system, user, prefix, continuations)
+    return {str(dose): round(float(s), 5) for dose, s in zip(MENU, scores)}
+
+
+def rule_ranges(features: pd.Series) -> dict[str, Optional[list[int]]]:
+    """Rules that fire for this patient: their dose range, or None for a direction (R2)."""
+    return {rule_id: None if f.low is None else [f.low, f.high]
+            for rule_id, f in fired_rules(features).items()}
+
+
 def one_dose(hadm_id: str, features: pd.Series, client: LLMClient, attempts: int,
-             limiter: Optional[RateLimiter], arm: str, system: str) -> dict[str, Any]:
+             limiter: Optional[RateLimiter], arm: str, system: str,
+             with_logprobs: bool = False) -> dict[str, Any]:
     started = time.time()
     meta: dict[str, Any] = {}
-    response, error, tries = call_with_retry(client, system, plain_user_prompt(features),
-                                             attempts, limiter, meta)
-    row: dict[str, Any] = {"hadm_id": hadm_id, "arm": arm, "prompt_sha": prompt_sha(system),
+    user = user_prompt_for(arm, features)
+    response, error, tries = call_with_retry(client, system, user, attempts, limiter, meta)
+    row: dict[str, Any] = {"hadm_id": hadm_id, "arm": arm,
+                           "prompt_sha": prompt_sha(system, arm),
                            "attempts": tries, "served_model": meta.get("model"),
                            "key_order": meta.get("key_order")}
+    if arm in RULE_ARMS:
+        row["fired_rules"] = rule_ranges(features)
     usage = meta.get("usage") or {}
     row["prompt_tokens"] = usage.get("prompt_tokens")
     row["completion_tokens"] = usage.get("completion_tokens")
@@ -133,21 +187,31 @@ def one_dose(hadm_id: str, features: pd.Series, client: LLMClient, attempts: int
             row.update(status="unparsed", pred_dose_mg=None, raw=str(response)[:500])
         else:
             dose = snap_to_ladder(raw)
+            reasoning = str(response.get("reasoning", ""))
+            factor = str(response.get("primary_factor", ""))
             row.update(status="ok", pred_dose_mg=dose, raw_dose=raw, off_menu=raw != dose,
-                       primary_factor=str(response.get("primary_factor", ""))[:200],
-                       reasoning=str(response.get("reasoning", ""))[:800])
+                       primary_factor=factor[:200], reasoning=reasoning[:800])
+            if arm in RULE_ARMS:
+                # From the whole text: the stored reasoning is cut at 800 characters.
+                row["cited_rules"] = sorted(set(RULE_ID.findall(reasoning + " " + factor)))
+            if with_logprobs:
+                try:
+                    row["dose_logprobs"] = dose_logprobs(client, system, user,
+                                                         meta.get("content") or "")
+                except Exception as exc:  # noqa: BLE001 - the dose itself is still scored
+                    row["dose_logprobs_error"] = f"{type(exc).__name__}: {exc}"[:300]
     row["elapsed_s"] = round(time.time() - started, 2)
     return row
 
 
 def run(X: pd.DataFrame, path: Path, settings: dict[str, Any], workers: int, rpm: int,
-        fresh: bool, arm: str, system: str) -> None:
+        fresh: bool, arm: str, system: str, with_logprobs: bool = False) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     if fresh and path.exists():
         path.unlink()
     done = read_checkpoint(path)
     # One checkpoint answers one prompt: mixing rows of two prompts would score neither.
-    stale = {r.get("prompt_sha") for r in done.values()} - {prompt_sha(system)}
+    stale = {r.get("prompt_sha") for r in done.values()} - {prompt_sha(system, arm)}
     if stale:
         raise SystemExit(f"{path.name} holds rows of another prompt {sorted(stale)}; "
                          "rerun with --fresh or point PHYSIOAGENT_DOSE_RESULTS elsewhere")
@@ -165,7 +229,7 @@ def run(X: pd.DataFrame, path: Path, settings: dict[str, Any], workers: int, rpm
     with path.open("a", encoding="utf-8") as handle, \
             ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
         futures = [pool.submit(one_dose, h, X.loc[h], client, RETRY_ATTEMPTS, limiter, arm,
-                               system) for h in todo]
+                               system, with_logprobs) for h in todo]
         for future in as_completed(futures):
             row = future.result()
             with lock:
@@ -225,6 +289,90 @@ def group_metrics(frame: pd.DataFrame, b0: float) -> dict[str, dict[str, Any]]:
     return report
 
 
+def spearman(a: pd.Series, b: pd.Series) -> Optional[float]:
+    # Ranks then Pearson: Series.corr(method="spearman") would need scipy.
+    a, b = pd.Series(a).reset_index(drop=True), pd.Series(b).reset_index(drop=True)
+    if len(a) < MIN_CELL or a.nunique() < 2 or b.nunique() < 2:
+        return None
+    return round(float(a.rank().corr(b.rank())), 3)
+
+
+def auroc(score: np.ndarray, positive: np.ndarray) -> Optional[float]:
+    """Mann-Whitney AUROC with ties counted half."""
+    n_pos, n_neg = int(positive.sum()), int((~positive).sum())
+    if n_pos < MIN_CELL or n_neg < MIN_CELL:
+        return None
+    ranks = pd.Series(score).rank().to_numpy()
+    return round(float((ranks[positive].sum() - n_pos * (n_pos + 1) / 2) / (n_pos * n_neg)), 4)
+
+
+def _median_dose(p: np.ndarray) -> np.ndarray:
+    menu = np.asarray(MENU, dtype=float)
+    return menu[(np.cumsum(p, axis=1) >= 0.5 - 1e-9).argmax(axis=1)]
+
+
+def distribution_readout(rows: dict[str, dict[str, Any]], y: pd.Series, b0: float
+                         ) -> dict[str, Any]:
+    """E2: the dose read out of the model's distribution over the menu, against the dose it
+    generated, on the patients that have both."""
+    keys = [str(d) for d in MENU]
+    have = [h for h in y.index if rows.get(h, {}).get("status") == "ok"
+            and all(k in (rows[h].get("dose_logprobs") or {}) for k in keys)]
+    if len(have) < MIN_CELL:
+        return {"n": f"<{MIN_CELL}"}
+    menu = np.asarray(MENU, dtype=float)
+    lp = np.array([[rows[h]["dose_logprobs"][k] for k in keys] for h in have], dtype=float)
+    p = np.exp(lp - lp.max(axis=1, keepdims=True))
+    p /= p.sum(axis=1, keepdims=True)
+    # Batch calibration: the mean distribution over the split is the prompt's own prior.
+    q = p / p.mean(axis=0, keepdims=True)
+    q /= q.sum(axis=1, keepdims=True)
+    y_true = y.loc[have].to_numpy(float)
+    generated = np.array([rows[h]["pred_dose_mg"] for h in have], dtype=float)
+    expected = p @ menu
+    readouts = {"generated": generated, "mode": menu[p.argmax(axis=1)],
+                "median": _median_dose(p), "mean_on_ladder": menu[_step(expected)],
+                "batch_calibrated_mode": menu[q.argmax(axis=1)],
+                "batch_calibrated_median": _median_dose(q)}
+    out: dict[str, Any] = {
+        "n": len(have),
+        # How much of the unconstrained probability lands on a menu value at all.
+        "menu_mass_mean": round(float(np.exp(lp).sum(axis=1).mean()), 4),
+        "entropy_mean_nats": round(float(-(p * np.log(p + 1e-12)).sum(axis=1).mean()), 3),
+        "mode_matches_generated": round(float((readouts["mode"] == generated).mean()), 4),
+        "auroc_p_dose_ge60": auroc(p[:, menu >= 60].sum(axis=1), y_true >= 60),
+        "spearman_expected_dose": spearman(pd.Series(expected), pd.Series(y_true)),
+        "readouts": {},
+    }
+    for name, pred in readouts.items():
+        m = dose_metrics(y_true, pred, b0)
+        out["readouts"][name] = {**{k: m[k] for k in ("mae", "skill", "bias", "within_1_step")},
+                                 "spearman": spearman(pd.Series(pred), pd.Series(y_true)),
+                                 "pred_distribution": distribution(pd.Series(pred))}
+    return out
+
+
+def rule_use(rows: dict[str, dict[str, Any]], ok: list[str]) -> Optional[dict[str, Any]]:
+    """Guideline arm: does the reply name the rules it was given, and stay in their range?"""
+    ok = [h for h in ok if "fired_rules" in rows[h]]
+    if not ok:
+        return None
+    fired = {h: rows[h]["fired_rules"] for h in ok}
+    cited = {h: set(rows[h].get("cited_rules") or []) for h in ok}
+    with_rule = [h for h in ok if fired[h]]
+    ranged = [h for h in ok if any(r for r in fired[h].values())]
+
+    def share(hs: list[str], test) -> Any:
+        if len(hs) < MIN_CELL:
+            return f"n<{MIN_CELL}"
+        return {"n": len(hs), "pct": round(100 * float(np.mean([test(h) for h in hs])), 1)}
+
+    return {"cites_a_fired_rule": share(with_rule, lambda h: bool(cited[h] & set(fired[h]))),
+            "cites_a_rule_that_did_not_fire": share(ok, lambda h: bool(cited[h] - set(fired[h]))),
+            "dose_inside_a_fired_range": share(ranged, lambda h: any(
+                r and r[0] <= rows[h]["pred_dose_mg"] <= r[1] for r in fired[h].values()))}
+
+
 def score(path: Path, split: str, split_col: str, cohort_dir: Path, tag: str = ""
           ) -> dict[str, Any]:
     rows = read_checkpoint(path)
@@ -253,9 +401,17 @@ def score(path: Path, split: str, split_col: str, cohort_dir: Path, tag: str = "
         "reasoning_first_rate": round(float(np.mean(ordered)), 4) if ordered else None,
         "answered": suppressed(dose_metrics(frame["y"].to_numpy(float),
                                             frame["pred"].to_numpy(float), b0)),
+        # Does the arm order patients at all? MAE alone rewards collapsing on the mode.
+        "spearman_answered": spearman(frame["pred"], frame["y"]),
         "all_targets_failed_as_b0": suppressed(dose_metrics(y_all, imputed, b0)),
         "by_group": group_metrics(frame, b0),
     }
+    if any("dose_logprobs" in r or "dose_logprobs_error" in r for r in rows.values()):
+        report["dose_logprobs_errors"] = sum("dose_logprobs_error" in r for r in rows.values())
+        report["distribution_readout"] = distribution_readout(rows, y, b0)
+    uses = rule_use(rows, ok)
+    if uses is not None:
+        report["rule_use"] = uses
     band = report["by_group"]["dose_band"]
     maes = [c["mae"] for c in band.values() if "mae" in c]
     report["dose_band_macro_mae"] = round(float(np.mean(maes)), 2) if maes else None
@@ -286,6 +442,8 @@ def main() -> int:
     ap.add_argument("--fresh", action="store_true", help="delete the checkpoint first")
     ap.add_argument("--score", action="store_true", help="score what is on disk and exit")
     ap.add_argument("--save", type=Path, help="with --score: also write the report here")
+    ap.add_argument("--dose-logprobs", action="store_true",
+                    help="E2: also score every menu dose at dose_mg (vLLM only)")
     args = ap.parse_args()
 
     path = checkpoint_path(args.arm, args.split, args.split_col, args.tag)
@@ -302,7 +460,8 @@ def main() -> int:
     if args.limit:
         X = X.iloc[:args.limit]
     system = system_prompt_for(args.arm, args.split_col, args.cohort_dir, args.tag)
-    run(X, path, load_settings(), args.workers, args.rpm, args.fresh, args.arm, system)
+    run(X, path, load_settings(), args.workers, args.rpm, args.fresh, args.arm, system,
+        args.dose_logprobs)
     print(f"[{args.arm}] checkpoint {path}")
     return 0
 
