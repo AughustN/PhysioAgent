@@ -5,6 +5,8 @@ pyyaml>=6.0
 # pandas; scikit-learn does not, and the KG build fails at the last step without it.
 numpy>=1.24
 scikit-learn>=1.3
+# eval/baselines.py: XGBoost regression baseline on the cohort v2 features.
+xgboost>=2.0
 fastapi>=0.110
 uvicorn[standard]>=0.27
 python-dotenv>=1.0
