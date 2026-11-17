@@ -9,6 +9,8 @@ chỉ là số tổng hợp. Funnel dưới đây là theo Probe 1; luật (b) s
 - **Mẫu**: 1 bệnh nhân = 1 mẫu = **lượt nhập viện cuối đủ tiêu chuẩn** (qua S9).
 - **T0**: mũi bolus/push IV furosemide **đầu tiên tại ICU** của lượt đó
   (`inputevents` itemid 221794, mg, amount > 0, bỏ `statusdescription = Rewritten`).
+  Trước T0 trong ICU không được có furosemide nào khác: không truyền (S5), không mũi IV ở `emar`
+  ≥ 1 h trước T0 (S5b).
 - **Nhãn**: mg của đúng mũi T0, giá trị gốc, không cộng dồn.
   Ladder: 10/20/40/60/80/100/120/140/160/200 (phủ 99,43% liều đầu ICU). Ladder nằm trong system prompt.
 - Lý do chọn liều đầu: là quyết định duy nhất chưa thấy đáp ứng; từ liều 2 là chỉnh liều theo đáp ứng
@@ -37,20 +39,34 @@ Không bước lọc nào được dùng thông tin sau T0, trừ ngoại lệ g
 | S2 | Mũi ICU đầu tiên mỗi lượt nhập viện = T0 | 24.761 lượt |
 | S3 | Liều T0 trên ladder; lệch thì bỏ cả lượt (không lấy liều kế) | 24.621 |
 | S4 | Tuổi ≥ 18 tại T0 | 24.621 |
-| S5 | Không đang truyền furosemide liên tục tại T0 | 24.123 |
-| S6 | Bằng chứng CKD (a/b/c, mục 3; (b) strict) | 7.396 |
-| S7 | Không lọc máu trong 24 h trước T0 | 7.316 |
-| S8 | Phụ thuộc lọc máu (Z99.2/V45.11/N18.6/585.6) → cohort 5D riêng (645 lượt, 528 BN) | 6.671 |
-| S9 | Creatinine **đã có kết quả** (`storetime`) trong [`t_dec` − 48 h, `t_dec`), nối theo `subject_id` | 6.528 lượt / 5.473 BN |
-| S10 | Lượt cuối đủ tiêu chuẩn mỗi BN | 5.473 mẫu |
+| S5 | Không có truyền furosemide ICU **bắt đầu trước hoặc tại T0** (đang chạy hay đã ngừng) | 23.878 |
+| S5b | Không có mũi IV furosemide trong `emar` từ `intime` ICU tới T0 − 1 h (mục 4.7) | 22.913 |
+| S6 | Bằng chứng CKD (a/b/c, mục 3; (b) strict, ngoại trú thật) | 6.800 |
+| S7 | Không lọc máu trong 24 h trước T0 | 6.728 |
+| S8 | Phụ thuộc lọc máu (Z99.2/V45.11/N18.6/585.6) → cohort 5D riêng (606 lượt, 501 BN) | 6.122 |
+| S9 | Creatinine **đã có kết quả** (`storetime`) trong [`t_dec` − 48 h, `t_dec`), nối theo `subject_id` | 5.983 lượt / 5.057 BN |
+| S10 | Lượt cuối đủ tiêu chuẩn mỗi BN | 5.057 mẫu |
 
-- Số theo `kg/ehr/cohort_build.py` (lần chạy 2026-10-30): S1–S5 như Probe 1; S6 dùng (b) strict, S9 dùng
-  mốc `t_dec`. Chia theo bệnh nhân: train 3.831 / dev 820 / test 822; dải liều cân bằng giữa các tập.
-- Mô tả 5.473 BN: `t_dec` từ y lệnh 85,4%; `ckd_evidence` confirmed 3.350 / index_only 2.123;
-  `decision_context` routine 3.942 / protocol 1.378 / loading 153; tử vong trong viện 1.109 (20,3%).
-- Median liều trên train = 40 mg (≤ 20 mg chiếm 49,8%, sát ranh giới), nên B0 hiện là 40 mg.
-- A3 `unverifiable` 1.752, trong đó 93% thuộc 2008–2013 (thiếu emar), ≈ 0 từ 2017: A3 lẫn với thời gian;
+- Số theo `kg/ehr/cohort_build.py` (lần chạy 2026-11-16, MIMIC-IV 3.1 local). Chia theo bệnh nhân:
+  train 3.540 / dev 758 / test 759; dải liều cân bằng giữa các tập.
+- Sửa 2026-11-16 so với lần chạy 2026-10-30 (5.473 BN):
+  - S5 cũ chỉ loại truyền **đang chạy** tại T0; 245 lượt có truyền đã ngừng trước T0 lọt vào, khi đó
+    T0 không còn là liều đầu chưa thấy đáp ứng.
+  - S5b mới: 965 lượt có mũi IV trong `emar` lúc đã ở ICU, ≥ 1 h trước T0, không có trong `inputevents`.
+  - (b) và eGFR nền: creatinine `hadm_id` trống gồm cả mẫu lấy ở ED. Đã loại mẫu nằm trong
+    [`edregtime`/`admittime`, `dischtime`] của bất kỳ lượt nào. Trước khi sửa, 3.129/4.432 (71%)
+    "eGFR nền" là mẫu ED của chính lượt mục tiêu (median 3,8 h trước nhập viện).
+  - Route emar dùng thêm `emar_detail` / tên chế phẩm khi `pharmacy` không có route (như Probe 1).
+  - Vì bỏ bớt ca, việc chia tập xáo lại: 2.358/5.044 BN còn giữ đổi tập. Kết quả cũ trên dev/test
+    không so trực tiếp được.
+- Mô tả 5.057 BN: `t_dec` từ y lệnh 85,1%; `ckd_evidence` confirmed 2.990 / index_only 2.067;
+  `decision_context` routine 3.620 / protocol 1.301 / loading 136; tử vong trong viện 998 (19,7%).
+- Median liều trên train = 20 mg (≤ 20 mg chiếm 50,2%, sát ranh giới), nên B0 hiện là 20 mg.
+  Trên test: luôn 20 mg MAE 24,62, luôn 40 mg MAE 24,70.
+- A3 `unverifiable` 1.673, trong đó 93% thuộc 2008–2013 (thiếu emar), ≈ 0 từ 2017: A3 lẫn với thời gian;
   tập test theo thời gian gần như không có nhóm này.
+- 51 BN có mặt ở cả cohort chính (lượt sớm hơn) và 5D (lượt sau): không dùng 5D làm kho truy hồi
+  chung với train chính.
 - **Ngoại lệ**: S6(c) và S8 dùng mã ICD của lượt hiện tại (ghi lúc ra viện) — chỉ để chọn ca,
   không làm feature. Kiểm tra bằng phân tích độ nhạy trên nhóm `confirmed`.
 - Không lọc theo tử vong, thời gian nằm viện, hay đáp ứng sau T0.
@@ -93,7 +109,7 @@ Mọi bằng chứng (a), (b) đều nằm **trước** lượt nhập viện m�
 | Nguồn | Định nghĩa |
 |---|---|
 | (a) | Mã N18.x / 585.x ở lượt nhập viện trước. Không thêm I12/I13/403/404 (Probe 2: 1 BN có mà không có N18/585) |
-| (b) | 2 lần eGFR < 60 cách nhau ≥ 90 ngày, **chỉ từ creatinine ngoại trú** (`labevents.hadm_id` trống) và `omr` eGFR, **không có lần eGFR ≥ 60 xen giữa** |
+| (b) | 2 lần eGFR < 60 cách nhau ≥ 90 ngày, **chỉ từ creatinine ngoại trú** (`labevents.hadm_id` trống **và** không nằm trong [`edregtime`/`admittime`, `dischtime`] của lượt nào của BN) và `omr` eGFR, **không có lần eGFR ≥ 60 xen giữa** |
 | (c) | Chỉ có mã CKD ở lượt hiện tại (chỉ để chọn ca; nhóm `index_only` ở A1) |
 
 - **Input**: eGFR nền (lần gần nhất trước nhập viện, ưu tiên ngoại trú), creatinine tại T0,
@@ -103,7 +119,10 @@ Mọi bằng chứng (a), (b) đều nằm **trước** lượt nhập viện m�
 - Siết (b) theo luật trên (Probe 2, trên 6.176 BN của funnel cũ): 669 BN (10,8%) mất hết bằng chứng CKD
   → ra khỏi cohort; 335 `confirmed_a_and_b` → `confirmed_a`; 116 `confirmed_b` → `index_only`.
   `index_only` lên 34,7%. Cohort ước còn ≈ 5,5 nghìn BN, số chính xác do builder tính lại S6–S10.
-- eGFR nền (lần ngoại trú gần nhất ≤ 365 ngày trước nhập viện): Probe 2 có ở 82,3% BN.
+- eGFR nền (lần ngoại trú gần nhất ≤ 365 ngày trước nhập viện): Probe 2 có ở 82,3% BN, nhưng con số
+  đó tính cả mẫu ED của chính lượt mục tiêu (71% số "eGFR nền"). Sau khi sửa (`cohort_features`
+  chạy 2026-11-16 trên 5.057 BN): có eGFR nền 57,0% (cũ 81,0%), median cách nhập viện 21,9 ngày
+  (cũ 0,2 ngày); `stage_from_t_dec` 43,0% (cũ 19,0%).
 - Giới hạn: CKD G1–G2 (định nghĩa bằng albumin niệu) chỉ bắt được qua mã ICD. Probe 2: 17,5% BN có
   eGFR nền ≥ 60.
 
@@ -137,27 +156,31 @@ Mọi bằng chứng (a), (b) đều nằm **trước** lượt nhập viện m�
 - **4.7 Emar lượt hiện tại chỉ lấy trước `intime`** (trước khi vào ICU). Mũi IV emar giữa `intime` và T0
   hoặc là mũi T0 ghi trùng (lộ nhãn), hoặc mâu thuẫn định nghĩa T0 (mũi ICU đầu tiên trong inputevents).
   Luật không dựa vào nhãn; lọc "mũi trùng liều nhãn" sẽ tự gây rò rỉ.
+  Đo 2026-11-16: 1.771/5.473 target cũ có mũi emar như vậy. Đa số là bản ghi trùng mũi T0 (mũi gần
+  nhất median 7 phút trước T0, 97% cùng liều), nhưng 248 target có mũi ≥ 1 h trước T0, gần như không
+  có dòng `inputevents` tương ứng (2/309). Vì vậy S5b loại theo **thời gian** (≥ 1 h trước T0, không
+  dựa nhãn); mũi trong vòng 1 h coi là bản ghi trùng và không vào input.
 - **Liều uống**: MIMIC-IV-ED không có nên không có liều tại nhà. Ước lượng theo thứ tự: đơn uống lúc
   ra viện lượt trước (kèm khoảng cách) → furosemide uống đã tiêm trong lượt hiện tại trước T0 →
   "không rõ". Gọi là "liều uống gần nhất được ghi nhận".
-- **DUA PhysioNet**: mọi lần chạy có dữ liệu MIMIC chỉ dùng `local_vllm` trên GreenNode hoặc provider
-  đã xác minh zero-retention. Không dùng Gemini API công khai (`provider: gemini` mặc định hiện tại).
+- **DUA PhysioNet**: mọi lần chạy có dữ liệu MIMIC chỉ dùng `local_vllm` (vLLM chạy trong job Slurm trên AAU AI Cloud) hoặc provider
+  đã xác minh zero-retention. Không dùng API công khai; `config/settings.yaml` chỉ còn `local_vllm`.
 ## 5. Chia tập
 
-- **Chính**: theo bệnh nhân, 70/15/15 (3.831 / 820 / 822), phân tầng theo dải liều × `ckd_evidence`,
+- **Chính**: theo bệnh nhân, 70/15/15 (3.540 / 758 / 759), phân tầng theo dải liều × `ckd_evidence`,
   seed cố định.
 - **Độ nhạy theo thời gian**: train/dev = BN `anchor_year_group` 2008–2016, test = 2017–2022
-  (train 3.581 / dev 767 / test 1.125). Giới hạn: `anchor_year_group` là nhóm 3 năm theo BN, không phải năm nhập viện.
+  (train 3.336 / dev 714 / test 1.007). Giới hạn: `anchor_year_group` là nhóm 3 năm theo BN, không phải năm nhập viện.
 - Vai trò: train = kho truy hồi ca tương tự, few-shot, thống kê tri thức; dev = chỉnh prompt/cấu hình;
   test = chạy **một lần** sau khi chốt, không truy hồi hay lấy ví dụ từ test.
-- File ID các tập chỉ lưu trên GreenNode, không commit (DUA).
+- File ID các tập chỉ lưu trên máy chạy (thư mục private), không commit (DUA).
 ## 6. Baseline và metric
 
 **Baseline** (cùng tập test):
 
 | | Baseline |
 |---|---|
-| B0 | Hằng số = median liều của tập train (hiện 20 mg); in kèm luôn 20 mg và luôn 40 mg — mức sàn, luôn in trong bảng kết quả. Probe 2 (6.176 BN): luôn 20 mg MAE 25,06 / MAPE 39,7% / ±20% 42,3%; luôn 40 mg MAE 25,29 / MAPE 80,4% / ±20% 25,2% |
+| B0 | Hằng số = median liều của tập train (hiện 20 mg, xem mục 2); in kèm luôn 20 mg và luôn 40 mg — mức sàn, luôn in trong bảng kết quả. Probe 2 (6.176 BN): luôn 20 mg MAE 25,06 / MAPE 39,7% / ±20% 42,3%; luôn 40 mg MAE 25,29 / MAPE 80,4% / ±20% 25,2% |
 | B1 | Luật guideline: có liều uống gần nhất → 1–2,5 lần (DOSE/ESC); không có → bảng theo giai đoạn eGFR |
 | B2 | ML dạng bảng (LightGBM, phân loại thứ tự trên ladder), cùng bộ feature |
 | B4 | LLM zero-shot, không truy hồi, không tri thức (ablation C3) |

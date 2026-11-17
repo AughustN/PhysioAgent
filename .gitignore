@@ -59,30 +59,27 @@ desktop.ini
 # Guideline documents under publisher copyright
 kg/data/guideline/raw/
 kg/data/guideline/guideline_passages*
-kg/data/guideline/guideline_axis_eval/
-kg/data/guideline/guideline_clusters*
-kg/data/guideline/guideline_link_eval/
-kg/data/guideline/guideline_concept_links.jsonl
-kg/data/guideline/guideline_graph*
-kg/data/guideline/_stale/
 
 # Patient-level walkthroughs derived from MIMIC (DUA)
 docs/raw_to_concepts_*.txt
 
-# Third-party papers / theses (publisher copyright) and large binaries
+# Third-party papers / theses (publisher copyright), meeting decks and large binaries
 docs/*.pdf
 docs/*.pptx
+docs/paper/
+docs/Meeting/
 
 # One-off dump of comments stripped from the code on 2026-10-01
 historyDocs.txt
 
-# Kept local for now, except the cohort dose runner the GreenNode server pulls.
+# Kept local, except the runners and the Slurm jobs for the AAU AI Cloud.
 # eval/results/ holds replies that quote patient values: it stays ignored (DUA).
 eval/*
 !eval/__init__.py
 !eval/run_cohort_dose.py
 !eval/run_cohort_rules.py
-!eval/greennode/
-eval/greennode/*
-!eval/greennode/run_cohort_dose.sh
+!eval/slurm/
 tests/
+
+# Local copy of the MIMIC-IV cohort build (patient data, DUA): never commit.
+PhysioCohort/

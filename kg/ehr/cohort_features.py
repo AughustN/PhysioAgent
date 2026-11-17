@@ -328,7 +328,7 @@ def main() -> int:
 
     _log("reading hosp/admissions, diagnoses_icd")
     admissions = read_table(root, "hosp", "admissions",
-                            ["subject_id", "hadm_id", "admittime", "dischtime"])
+                            ["subject_id", "hadm_id", "admittime", "dischtime", "edregtime"])
     admissions = admissions[admissions["subject_id"].isin(subjects)].assign(
         admittime=lambda d: _ts(d["admittime"]), dischtime=lambda d: _ts(d["dischtime"]))
     pairs = prior_pairs(t, admissions)
@@ -412,7 +412,8 @@ def main() -> int:
     omr = read_table(root, "hosp", "omr", ["subject_id", "chartdate", "result_name",
                                            "result_value"])
     omr = omr[omr["subject_id"].isin(subjects)]
-    readings = egfr_readings(creat, omr[omr["result_name"].str.contains("egfr", case=False)])
+    readings = egfr_readings(creat, omr[omr["result_name"].str.contains("egfr", case=False)],
+                             admissions)
     base = baseline_egfr(t, readings).reindex(f.index)
     base_r = t[["hadm_id", "subject_id", "admittime"]].merge(readings, on="subject_id")
     base_r = base_r[(base_r["time"] < base_r["admittime"])

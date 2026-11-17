@@ -1,10 +1,8 @@
-"""Where every kg/data artifact lives, one folder per pipeline stage.
+"""Where every kg/data artifact lives (gitignored: patient-derived or copyrighted).
 
-    ehr/         doses.json, visits, profiles, concept sets, scope and probe reports
-    kg/          UMLS + PubMed flows, kg_raw, kg_refined, refine outputs; umls/ tables
-    embeddings/  cached entity / relation / query embeddings (refine, trajectory)
-    retrieval/   trajectories (+ KST) and their reports
-    guideline/   raw/ sources, passages, dose records and gold; _stale/ outdated outputs
+    ehr/         cohort build output (cohort/), probe and build reports
+    guideline/   raw/ guideline sources and guideline_passages.jsonl
+    kg/, embeddings/, retrieval/   outputs of the earlier knowledge-graph pipeline
 """
 from __future__ import annotations
 

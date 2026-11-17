@@ -4,8 +4,12 @@ the label, the analysis flags and the split.
 
 Funnel as in cohort_funnel_probe, with the locked changes:
 
+    S5  no ICU furosemide infusion started before t0 (running at t0 or already stopped)
+    S5b no IV furosemide charted in emar between ICU intime and t0 - 1 h (an ICU dose that
+        inputevents lacks; emar copies of the t0 push itself sit within minutes of t0)
     S6  CKD (b) strict: eGFR < 60 twice >= 90 days apart before admission, from outpatient
-        creatinine (labevents.hadm_id blank) and omr only, no eGFR >= 60 in between
+        creatinine (labevents.hadm_id blank and not drawn during any ED visit or hospital
+        stay of the patient) and omr only, no eGFR >= 60 in between
     S9  creatinine resulted in [t_dec - 48 h, t_dec), where t_dec (spec 4.6) is the entertime
         of the latest IV furosemide order in the 24 h before t0 whose dose equals the label,
         else t0
@@ -47,7 +51,7 @@ from physioagent.kg.ehr.cohort_funnel_probe import (
     CARDIAC_SURGERY_PREFIXES, CREATININE_ITEMID, DIALYSIS_ITEMIDS, DIALYSIS_LOOKBACK_H, DOSE_EPS,
     EGFR_CKD, FUROSEMIDE_ITEMIDS, INPUT_ITEMIDS, IV_ROUTE, MIN_AGE, REQUIRED_CREAT_H, Funnel,
     _code, _counts, _log, _num, _read_filtered, _ts, administered, age_at_t0, classify_route,
-    code_flags, dialysis_at_t0, egfr_ckd_epi_2021, emar_group, first_bolus, infusion_running,
+    code_flags, dialysis_at_t0, egfr_ckd_epi_2021, emar_group, first_bolus, hadms_with_event,
     latest_creatinine, near_t0, on_ladder, prior_flags, split_inputevents)
 
 OUT_DIR = paths.EHR / "cohort"
@@ -57,6 +61,8 @@ FUROSEMIDE = r"furosemide|lasix"
 SEED = 2026
 SPLIT = {"train": 0.70, "dev": 0.15, "test": 0.15}
 LATE_YEAR_GROUPS = {"2017 - 2019", "2020 - 2022"}
+# emar copies of the t0 push sit within minutes of t0 (p90 of the latest one 0.55 h).
+EMAR_DUP_H = 1.0
 
 COLUMNS = ["subject_id", "hadm_id", "stay_id", "t0", "t_dec", "dose_mg", "dose_band",
            "admittime", "intime", "gender", "anchor_age", "anchor_year", "anchor_year_group",
@@ -68,9 +74,30 @@ COLUMNS = ["subject_id", "hadm_id", "stay_id", "t0", "t_dec", "dose_mg", "dose_b
 
 # --- CKD (spec section 3) -------------------------------------------------------------------
 
-def egfr_readings(creat: pd.DataFrame, omr: pd.DataFrame) -> pd.DataFrame:
-    """Outpatient eGFR readings (subject_id, time, egfr): creatinine with no hadm_id + omr."""
+def in_hospital(rows: pd.DataFrame, admissions: pd.DataFrame) -> pd.Series:
+    """True for rows whose charttime falls inside a hospital episode of the same patient,
+    [min(edregtime, admittime), dischtime]. ED draws carry no hadm_id, so a blank hadm_id
+    alone does not make a reading outpatient."""
+    start = pd.concat([_ts(admissions["edregtime"]), _ts(admissions["admittime"])],
+                      axis=1).min(axis=1)
+    stays = pd.DataFrame({"subject_id": admissions["subject_id"].to_numpy(),
+                          "start": start.to_numpy(),
+                          "end": _ts(admissions["dischtime"]).to_numpy()})
+    j = (rows[["subject_id", "charttime"]].reset_index()
+         .merge(stays, on="subject_id"))
+    hit = j.loc[(j["charttime"] >= j["start"]) & (j["charttime"] <= j["end"]), "index"]
+    return pd.Series(rows.index.isin(set(hit)), index=rows.index)
+
+
+def egfr_readings(creat: pd.DataFrame, omr: pd.DataFrame,
+                  admissions: pd.DataFrame | None = None) -> pd.DataFrame:
+    """Outpatient eGFR readings (subject_id, time, egfr): creatinine with no hadm_id + omr.
+    With `admissions` (subject_id, admittime, edregtime, dischtime), blank-hadm draws taken
+    during an ED visit or a hospital stay are dropped: 71% of the 'latest outpatient' readings
+    before the target admission were the ED draw of that same admission."""
     outpatient = creat.loc[creat["hadm_id"].eq(""), ["subject_id", "charttime", "egfr"]]
+    if admissions is not None:
+        outpatient = outpatient[~in_hospital(outpatient, admissions)]
     omr_egfr = _num(omr["result_value"].str.extract(r"^\s*>?\s*(\d+(?:\.\d+)?)\s*$")[0])
     omr_r = pd.DataFrame({"subject_id": omr["subject_id"], "time": _ts(omr["chartdate"]),
                           "egfr": omr_egfr})
@@ -83,6 +110,26 @@ def ckd_tier(a: np.ndarray, b: np.ndarray, c: np.ndarray, egfr_t0: pd.Series) ->
         [a & b, a, b, c & egfr_t0.lt(EGFR_CKD).to_numpy(), c & egfr_t0.ge(EGFR_CKD).to_numpy(), c],
         ["confirmed_a_and_b", "confirmed_a", "confirmed_b", "index_consistent",
          "index_discordant", "index_no_recent_creatinine"], default="none")
+
+
+# --- t0 is the first ICU dose (S5, S5b) -----------------------------------------------------
+
+def infusion_before_t0(cohort: pd.DataFrame, infusion: pd.DataFrame) -> set:
+    """hadm_ids with an ICU furosemide infusion started before t0, running or already
+    stopped: the t0 bolus then follows a seen response and is not a first dose (S5)."""
+    ev = infusion[["hadm_id", "starttime"]]
+    return hadms_with_event(cohort, ev, "hadm_id", lambda j: j["starttime"] <= j["t0"])
+
+
+def emar_iv_in_icu_before_t0(cohort: pd.DataFrame, emar_iv: pd.DataFrame) -> set:
+    """hadm_ids with an IV furosemide administration charted in emar after ICU intime and at
+    least EMAR_DUP_H before t0. emar re-charts the t0 push itself a few minutes before t0
+    (median 7 min, 97% the same mg), so the cut is on time, never on the dose (spec 4.7);
+    an emar dose an hour or more before t0 is an earlier ICU dose that inputevents lacks."""
+    gap = pd.Timedelta(hours=EMAR_DUP_H)
+    return hadms_with_event(cohort, emar_iv[["hadm_id", "charttime"]], "hadm_id",
+                            lambda j: (j["charttime"] >= j["intime"])
+                            & (j["charttime"] <= j["t0"] - gap))
 
 
 # --- decision time (spec 4.6) ---------------------------------------------------------------
@@ -177,8 +224,8 @@ def main() -> int:
 
     cohort = cohort[age_at_t0(cohort, patients) >= MIN_AGE]
     funnel.record("S4", f"age >= {MIN_AGE} at t0", cohort)
-    cohort = cohort[~cohort["hadm_id"].isin(infusion_running(cohort, parts["infusion"]))]
-    funnel.record("S5", "no furosemide infusion running at t0", cohort)
+    cohort = cohort[~cohort["hadm_id"].isin(infusion_before_t0(cohort, parts["infusion"]))]
+    funnel.record("S5", "no furosemide infusion started before t0", cohort)
 
     cohort = (cohort.merge(admissions.drop(columns=["subject_id", "dischtime",
                                                     "hospital_expire_flag"]),
@@ -186,6 +233,37 @@ def main() -> int:
                     .merge(icustays, on="stay_id", how="left")
                     .merge(patients, on="subject_id", how="left"))
     subjects = set(cohort["subject_id"])
+
+    # ---- S5b: no earlier IV dose charted in emar during the ICU stay ------------------------
+    _log("reading hosp/pharmacy (furosemide orders and routes)")
+    pharmacy = _read_filtered(
+        root, "hosp", "pharmacy",
+        ["subject_id", "pharmacy_id", "hadm_id", "medication", "route", "entertime"],
+        lambda c: c["subject_id"].isin(subjects)
+        & c["medication"].str.contains(FUROSEMIDE, case=False))
+    _log("reading hosp/emar (coverage, furosemide administrations)")
+    cohort_hadms = set(cohort["hadm_id"])
+    observable: set = set()
+    furo_rows: list[pd.DataFrame] = []
+    for chunk in read_table(root, "hosp", "emar", ["subject_id", "hadm_id", "emar_id",
+                                                   "pharmacy_id", "charttime", "medication",
+                                                   "event_txt"], chunksize=2_000_000):
+        observable |= set(chunk.loc[chunk["hadm_id"].isin(cohort_hadms), "hadm_id"])
+        furo_rows.append(chunk[chunk["subject_id"].isin(subjects)
+                               & chunk["medication"].str.contains(FUROSEMIDE, case=False)])
+    emar = pd.concat(furo_rows, ignore_index=True)
+    emar = emar[administered(emar["event_txt"])]
+    _log("reading hosp/emar_detail (route and product of furosemide administrations)")
+    emar_ids = set(emar["emar_id"])
+    detail = _read_filtered(root, "hosp", "emar_detail",
+                            ["emar_id", "route", "product_description"],
+                            lambda c: c["emar_id"].isin(emar_ids))
+    route_of = pharmacy.drop_duplicates("pharmacy_id").set_index("pharmacy_id")["route"]
+    emar = classify_route(emar, route_of, detail).assign(charttime=_ts(emar["charttime"]))
+    emar_iv = emar[emar["iv"]]
+    cohort = cohort[~cohort["hadm_id"].isin(emar_iv_in_icu_before_t0(cohort, emar_iv))]
+    funnel.record("S5b", f"no emar IV furosemide in the ICU >= {EMAR_DUP_H} h before t0",
+                  cohort)
 
     # ---- S6: CKD, (b) strict ---------------------------------------------------------------
     _log("reading hosp/diagnoses_icd")
@@ -215,7 +293,8 @@ def main() -> int:
                                            "result_value"])
     omr = omr[omr["subject_id"].isin(subjects)
               & omr["result_name"].str.contains("egfr", case=False)]
-    chronic = chronic_low_strict(cohort, egfr_readings(creat, omr))
+    chronic = chronic_low_strict(
+        cohort, egfr_readings(creat, omr, admissions[admissions["subject_id"].isin(subjects)]))
 
     # Joined on subject_id: ED draws before admission carry no hadm_id (spec 4).
     creat_any = creat.drop(columns="hadm_id")
@@ -243,12 +322,7 @@ def main() -> int:
     funnel.record("S7", f"no dialysis in the {DIALYSIS_LOOKBACK_H} h before t0", cohort)
 
     # ---- t_dec (spec 4.6) ------------------------------------------------------------------
-    _log("reading hosp/pharmacy, prescriptions (furosemide orders)")
-    pharmacy = _read_filtered(
-        root, "hosp", "pharmacy",
-        ["subject_id", "pharmacy_id", "hadm_id", "medication", "route", "entertime"],
-        lambda c: c["subject_id"].isin(subjects)
-        & c["medication"].str.contains(FUROSEMIDE, case=False))
+    _log("reading hosp/prescriptions (furosemide order doses)")
     hadms = set(cohort["hadm_id"])
     rx = _read_filtered(root, "hosp", "prescriptions",
                         ["pharmacy_id", "hadm_id", "drug", "dose_val_rx", "dose_unit_rx"],
@@ -289,22 +363,8 @@ def main() -> int:
                      ignore_index=True)
     t_hadms, t_subjects = set(both["hadm_id"]), set(both["subject_id"])
 
-    _log("reading hosp/emar (coverage, furosemide administrations)")
-    observable: set = set()
-    furo_rows: list[pd.DataFrame] = []
-    for chunk in read_table(root, "hosp", "emar", ["subject_id", "hadm_id", "emar_id",
-                                                   "pharmacy_id", "charttime", "medication",
-                                                   "event_txt"], chunksize=2_000_000):
-        observable |= set(chunk.loc[chunk["hadm_id"].isin(t_hadms), "hadm_id"])
-        furo_rows.append(chunk[chunk["subject_id"].isin(t_subjects)
-                               & chunk["medication"].str.contains(FUROSEMIDE, case=False)])
-    emar = pd.concat(furo_rows, ignore_index=True)
-    emar = emar[administered(emar["event_txt"])]
-    route_of = pharmacy.drop_duplicates("pharmacy_id").set_index("pharmacy_id")["route"]
-    no_detail = pd.DataFrame(columns=["emar_id", "route", "product_description"])
-    emar = classify_route(emar, route_of, no_detail).assign(charttime=_ts(emar["charttime"]))
-    both["emar_group"] = emar_group(both, observable,
-                                    emar[emar["iv"] & emar["hadm_id"].isin(t_hadms)])
+    both["emar_group"] = emar_group(both, observable & t_hadms,
+                                    emar_iv[emar_iv["hadm_id"].isin(t_hadms)])
 
     furo_ie = ie[ie["itemid"].isin(FUROSEMIDE_ITEMIDS) & ie["statusdescription"].ne("Rewritten")]
     events = pd.concat([furo_ie[["hadm_id"]], emar[["hadm_id"]]], ignore_index=True)
